@@ -1,5 +1,5 @@
 {
-  "name": "acp2openai",
+  "name": "@yaonyan/acp2openai-compatible",
   "version": "0.1.0",
   "description": "OpenAI-compatible API adapter for ACP (Agent Client Protocol) providers using the AI SDK. Framework-agnostic with built-in adapters for Hono, Express, and Web Standards.",
   "type": "module",
@@ -7,7 +7,7 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/acp2openai"
+    "url": "git+https://github.com/yaonyan/acp2openai-compatible.git"
   },
   "sideEffects": false,
   "files": [
