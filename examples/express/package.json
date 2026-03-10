@@ -1,0 +1,15 @@
+{
+  "name": "acp2openai-example-express-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "start": "tsx server.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

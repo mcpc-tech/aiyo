@@ -1,0 +1,81 @@
+{
+  "name": "acp2openai",
+  "version": "0.1.0",
+  "description": "OpenAI-compatible API adapter for ACP (Agent Client Protocol) providers using the AI SDK. Framework-agnostic with built-in adapters for Hono, Express, and Web Standards.",
+  "type": "module",
+  "license": "MIT",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/acp2openai"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:simple": "tsx test-integration-simple.ts",
+    "example:hono": "tsx examples/hono-server/server.ts",
+    "test:all": "npm run test:unit && npm run test:integration",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openai",
+    "openai-compatible",
+    "ai-sdk",
+    "acp",
+    "agent-client-protocol",
+    "express",
+    "hono",
+    "cloudflare-workers",
+    "vercel-ai-sdk",
+    "chat-completions",
+    "streaming",
+    "sse"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@mcpc-tech/acp-ai-provider": "^0.2.7",
+    "ai": "^6.0.116"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "^4.0.18",
+    "openai": "^6.27.0",
+    "tsdown": "^0.21.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "@agentclientprotocol/sdk": "*"
+  },
+  "peerDependenciesMeta": {
+    "@agentclientprotocol/sdk": {
+      "optional": true
+    }
+  }
+}
