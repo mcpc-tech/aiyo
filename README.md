@@ -1,4 +1,4 @@
-# /acp2openai-compatible
+# @yaonyan/acp2openai-compatible
 
 **OpenAI-compatible API adapter** for [ACP (Agent Client Protocol)](https://github.com/mcpc-tech/mcpc) providers using the [AI SDK](https://ai-sdk.dev/).
 
@@ -16,7 +16,7 @@ This library enables you to expose ACP-compatible agents through an OpenAI-compa
 ## Installation
 
 ```bash
-npm install /acp2openai-compatible
+npm install @yaonyan/acp2openai-compatible
 ```
 
 ## Quick Start
@@ -25,7 +25,7 @@ npm install /acp2openai-compatible
 
 ```typescript
 import { Hono } from 'hono';
-import { createACP2OpenAI } from '/acp2openai-compatible';
+import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
 
 const app = new Hono();
 
@@ -41,7 +41,7 @@ export default app;
 
 ```typescript
 import express from 'express';
-import { createACP2OpenAI } from '/acp2openai-compatible';
+import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
 
 const app = express();
 app.use(express.json());
@@ -65,7 +65,7 @@ import OpenAI from 'openai';
 
 const client = new OpenAI({
   baseURL: 'http://localhost:3000/v1',
-  apiKey: 'dummy', // Not validated by /acp2openai-compatible
+  apiKey: 'dummy', // Not validated by @yaonyan/acp2openai-compatible
 });
 
 const response = await client.chat.completions.create({
@@ -210,7 +210,7 @@ ACP-specific and AI SDK parameters can be passed via `extra_body`:
 
 ```typescript
 import { Hono } from 'hono';
-import { createACP2OpenAI } from '/acp2openai-compatible';
+import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
 
 const app = new Hono();
 
@@ -234,7 +234,7 @@ export default app;
 
 ```typescript
 import express from 'express';
-import { createACP2OpenAI } from '/acp2openai-compatible';
+import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
 
 const app = express();
 app.use(express.json());
@@ -265,7 +265,7 @@ for await (const chunk of stream) {
 ### Example 3: Cloudflare Workers
 
 ```typescript
-import { createACP2OpenAI } from '/acp2openai-compatible';
+import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
 
 const adapter = createACP2OpenAI({
   defaultACPConfig: {
@@ -291,7 +291,7 @@ export default {
 ### Custom Model Routing
 
 ```typescript
-import { ACP2OpenAI } from '/acp2openai-compatible';
+import { ACP2OpenAI } from '@yaonyan/acp2openai-compatible';
 
 class CustomAdapter extends ACP2OpenAI {
   async handleChatCompletion(req) {
