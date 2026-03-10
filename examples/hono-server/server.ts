@@ -33,14 +33,16 @@ const app = new Hono();
 app.get('/', (c) =>
   c.json({
     name: 'acp2openai-hono-example',
-    endpoint: '/v1/chat/completions',
+    endpoints: ['/v1/models', '/v1/chat/completions', '/v1/responses'],
     health: '/health',
   }),
 );
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
 
+app.get('/v1/models', adapter.honoHandler());
 app.post('/v1/chat/completions', adapter.honoHandler());
+app.post('/v1/responses', adapter.honoHandler());
 
 app.onError((err, c) => {
   console.error('[hono-example] Unhandled error:', err);
@@ -48,7 +50,9 @@ app.onError((err, c) => {
 });
 
 console.log(`🚀 Hono server running on http://localhost:${port}`);
-console.log(`📡 OpenAI endpoint: http://localhost:${port}/v1/chat/completions`);
+console.log(`📡 OpenAI endpoint(models): http://localhost:${port}/v1/models`);
+console.log(`📡 OpenAI endpoint(chat): http://localhost:${port}/v1/chat/completions`);
+console.log(`📡 OpenAI endpoint(responses): http://localhost:${port}/v1/responses`);
 console.log('💡 Try: curl http://localhost:' + port + '/health');
 
 serve({

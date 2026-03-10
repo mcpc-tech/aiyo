@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { ACP2OpenAI, type OpenAIChatCompletionRequest } from './index.js';
 
 /**
@@ -8,6 +9,12 @@ import { ACP2OpenAI, type OpenAIChatCompletionRequest } from './index.js';
  * Make sure the command is available in your PATH
  */
 describe('Integration Tests - Real ACP Connection', () => {
+  const hasClaudeAgentACP = spawnSync('sh', ['-c', 'command -v claude-agent-acp'], {
+    stdio: 'ignore',
+  }).status === 0;
+
+  const runIfACPAvailable = hasClaudeAgentACP ? it : it.skip;
+
   const adapter = new ACP2OpenAI({
     defaultModel: 'default',  // Use a valid ACP model
     defaultACPConfig: {
@@ -20,7 +27,30 @@ describe('Integration Tests - Real ACP Connection', () => {
     },
   });
 
-  it('should handle real chat completion request', async () => {
+  runIfACPAvailable('should return models list via /v1/models after initSession', async () => {
+    const response = await adapter.handleRequest(new Request('http://localhost/v1/models', {
+      method: 'GET',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toContain('application/json');
+
+    const data = await response.json();
+    expect(data).toMatchObject({
+      object: 'list',
+      data: expect.any(Array),
+    });
+    expect(data.data.length).toBeGreaterThan(0);
+    expect(data.data[0]).toMatchObject({
+      id: expect.any(String),
+      object: 'model',
+      owned_by: 'acp2openai',
+    });
+
+    console.log('✓ Models list:', data.data.map((m: { id: string }) => m.id).join(', '));
+  }, 30000);
+
+  runIfACPAvailable('should handle real chat completion request', async () => {
     const request: OpenAIChatCompletionRequest = {
       model: 'default',
       messages: [
@@ -56,7 +86,7 @@ describe('Integration Tests - Real ACP Connection', () => {
     console.log('✓ Real response:', response.choices[0].message.content);
   }, 30000); // 30s timeout for real API call
 
-  it('should handle real streaming chat completion', async () => {
+  runIfACPAvailable('should handle real streaming chat completion', async () => {
     const request: OpenAIChatCompletionRequest = {
       model: 'default',
       messages: [

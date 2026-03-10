@@ -1,11 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACP2OpenAI, type OpenAIChatCompletionRequest } from './index.js';
+import {
+  ACP2OpenAI,
+  type OpenAIChatCompletionRequest,
+} from './index.js';
 
 vi.mock('@mcpc-tech/acp-ai-provider', () => ({
   ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME: 'acp.acp_provider_agent_dynamic_tool',
   acpTools: vi.fn((tools) => tools),
   createACPProvider: vi.fn(() => ({
     languageModel: vi.fn(() => 'mocked-model'),
+    initSession: vi.fn(async () => ({
+      sessionId: 'session_1',
+      models: {
+        availableModels: [
+          { modelId: 'default', name: 'Default' },
+          { modelId: 'gpt-test', name: 'GPT Test' },
+        ],
+        currentModelId: 'default',
+      },
+    })),
+    cleanup: vi.fn(),
+    tools: undefined,
   })),
 }));
 
@@ -420,6 +435,40 @@ describe('ACP2OpenAI (high-value unit tests)', () => {
     expect(chunks[chunks.length - 1]).toBe('data: [DONE]\n\n');
     const first = JSON.parse(chunks[0].replace('data: ', ''));
     expect(first.choices[0].delta.role).toBe('assistant');
+  });
+
+  it('supports /v1/models in Web Request handler via ACP initSession', async () => {
+    const { createACPProvider } = await import('@mcpc-tech/acp-ai-provider');
+
+    const request = new Request('http://localhost/v1/models', {
+      method: 'GET',
+    });
+
+    const response = await adapter.handleRequest(request);
+    const data = await response.json();
+
+    expect(createACPProvider).toHaveBeenCalledWith(defaultACPConfig);
+    expect(response.status).toBe(200);
+    expect(data.object).toBe('list');
+    expect(Array.isArray(data.data)).toBe(true);
+    expect(data.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'default', object: 'model' }),
+        expect.objectContaining({ id: 'gpt-test', object: 'model' }),
+      ]),
+    );
+  });
+
+  it('throws when defaultACPConfig is missing for /v1/models', async () => {
+    const adapterWithoutConfig = new ACP2OpenAI();
+
+    const request = new Request('http://localhost/v1/models', {
+      method: 'GET',
+    });
+
+    await expect(adapterWithoutConfig.handleRequest(request)).rejects.toThrow(
+      'defaultACPConfig is required for GET /v1/models',
+    );
   });
 
   it('throws when ACP config is missing', async () => {

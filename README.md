@@ -6,12 +6,18 @@ This library enables you to expose ACP-compatible agents through an OpenAI-compa
 
 ## Features
 
-- ✅ **OpenAI-compatible API** - Drop-in replacement for OpenAI's chat completions endpoint
-- ✅ **Streaming support** - SSE-based streaming responses
-- ✅ **Framework agnostic** - Built-in adapters for Hono, Express, and standard Request/Response
-- ✅ **vLLM-style extra parameters** - Pass ACP-specific config via `extra_body`
-- ✅ **Built with AI SDK** - Leverages Vercel's AI SDK internally for robust model interactions
-- ✅ **TypeScript-first** - Full type safety with comprehensive type definitions
+- **OpenAI-compatible APIs** - Supports `/v1/models`, `/v1/chat/completions`, and `/v1/responses`
+- **Streaming support** - SSE-based streaming responses
+- **Framework agnostic** - Built-in adapters for Hono, Express, and standard Request/Response
+- **vLLM-style extra parameters** - Pass ACP-specific config via `extra_body`
+- **Built with AI SDK** - Leverages Vercel's AI SDK internally for robust model interactions
+- **TypeScript-first** - Full type safety with comprehensive type definitions
+
+## OpenAI API Reference Links
+
+- Models List: [OpenAI API - List models](https://developers.openai.com/api/reference/resources/models/methods/list)
+- Chat Completions: [OpenAI API - Create chat completion](https://developers.openai.com/docs/api-reference/chat/create)
+- Responses: [OpenAI API - Responses](https://developers.openai.com/docs/api-reference/responses)
 
 ## Installation
 
@@ -31,8 +37,10 @@ const app = new Hono();
 
 const adapter = createACP2OpenAI();
 
-// Mount the OpenAI-compatible endpoint
+// Mount OpenAI-compatible endpoints
+app.get('/v1/models', adapter.honoHandler());
 app.post('/v1/chat/completions', adapter.honoHandler());
+app.post('/v1/responses', adapter.honoHandler());
 
 export default app;
 ```
@@ -48,12 +56,54 @@ app.use(express.json());
 
 const adapter = createACP2OpenAI();
 
-// Mount the OpenAI-compatible endpoint
+// Mount OpenAI-compatible endpoints
+app.get('/v1/models', adapter.expressHandler());
 app.post('/v1/chat/completions', adapter.expressHandler());
+app.post('/v1/responses', adapter.expressHandler());
 
 app.listen(3000, () => {
   console.log('Server listening on http://localhost:3000');
 });
+```
+
+### Get Models List (`GET /v1/models`)
+
+Once your server is running, you can fetch the available models list.
+
+**Note:** this endpoint initializes an ACP session internally (`initSession`) to discover real model capabilities, so `defaultACPConfig` must be provided when creating the adapter.
+
+```bash
+curl -s http://localhost:3000/v1/models
+```
+
+Example response:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "default",
+      "object": "model",
+      "created": 1735689600,
+      "owned_by": "acp-provider"
+    }
+  ]
+}
+```
+
+You can also call it with the OpenAI SDK:
+
+```typescript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:3000/v1',
+  apiKey: 'dummy',
+});
+
+const models = await client.models.list();
+console.log(models.data.map((m) => m.id));
 ```
 
 ### Using with OpenAI Client
@@ -126,7 +176,9 @@ app.fetch = (request) => adapter.handleRequest(request);
 Returns Express/Node.js-style middleware.
 
 ```typescript
+app.get('/v1/models', adapter.expressHandler());
 app.post('/v1/chat/completions', adapter.expressHandler());
+app.post('/v1/responses', adapter.expressHandler());
 ```
 
 ##### `honoHandler()`
@@ -225,7 +277,9 @@ const adapter = createACP2OpenAI({
   defaultModel: 'gpt-4',
 });
 
+app.get('/v1/models', adapter.honoHandler());
 app.post('/v1/chat/completions', adapter.honoHandler());
+app.post('/v1/responses', adapter.honoHandler());
 
 export default app;
 ```
@@ -333,7 +387,7 @@ app.post('/v1/chat/completions', async (req, res) => {
 
 ## How It Works
 
-1. **Request arrives** in OpenAI format (`/v1/chat/completions`)
+1. **Request arrives** in OpenAI format (`/v1/models`, `/v1/chat/completions`, or `/v1/responses`)
 2. **ACP config** is extracted from `extra_body.acpConfig` or `defaultACPConfig`
 3. **ACP provider** is initialized via `@mcpc-tech/acp-ai-provider`
 4. **AI SDK** (`generateText` / `streamText`) executes the request
