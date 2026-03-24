@@ -4,7 +4,7 @@ import {
   createACPProvider,
   type ACPProviderSettings,
 } from '@mcpc-tech/acp-ai-provider';
-import { generateText, streamText, type ModelMessage, tool } from 'ai';
+import { generateText, streamText, Output, type ModelMessage, tool } from 'ai';
 import { z } from 'zod/v4';
 import type {
   ChatCompletion,
@@ -15,6 +15,11 @@ import type {
   ChatCompletionToolChoiceOption,
   ChatCompletionMessageFunctionToolCall,
 } from 'openai/resources/chat/completions';
+import type {
+  ResponseFormatText,
+  ResponseFormatJSONSchema,
+  ResponseFormatJSONObject,
+} from 'openai/resources/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type aliases - use OpenAI SDK types directly
@@ -198,7 +203,59 @@ export class ACP2OpenAI {
     };
   }
 
+  private convertResponseFormat(
+    responseFormat?: ResponseFormatText | ResponseFormatJSONSchema | ResponseFormatJSONObject,
+  ): ReturnType<typeof Output.json> | undefined {
+    if (!responseFormat) return undefined;
+
+    switch (responseFormat.type) {
+      case 'text':
+        return undefined; // default behavior
+
+      case 'json_object':
+        return Output.json();
+
+      case 'json_schema': {
+        const { json_schema } = responseFormat as ResponseFormatJSONSchema;
+        // Build a custom Output that passes the JSON Schema directly to the provider.
+        // We can't use Output.object() because that requires a Zod schema,
+        // and we have an arbitrary JSON Schema from the OpenAI request.
+        return {
+          name: 'object',
+          responseFormat: Promise.resolve({
+            type: 'json' as const,
+            ...(json_schema.schema != null && { schema: json_schema.schema }),
+            ...(json_schema.name != null && { name: json_schema.name }),
+            ...(json_schema.description != null && { description: json_schema.description }),
+          }),
+          async parseCompleteOutput({ text }: { text: string }) {
+            try {
+              return JSON.parse(text);
+            } catch {
+              return text;
+            }
+          },
+          async parsePartialOutput({ text }: { text: string }) {
+            try {
+              return { partial: JSON.parse(text) };
+            } catch {
+              return undefined;
+            }
+          },
+          createElementStreamTransform() {
+            return undefined;
+          },
+        } as ReturnType<typeof Output.json>;
+      }
+
+      default:
+        return undefined;
+    }
+  }
+
   private buildGenerationOptions(req: OpenAIChatCompletionRequest) {
+    const output = this.convertResponseFormat(req.response_format);
+
     return {
       temperature: req.temperature ?? undefined,
       maxOutputTokens: req.max_completion_tokens ?? req.max_tokens ?? undefined,
@@ -207,6 +264,7 @@ export class ACP2OpenAI {
       presencePenalty: req.presence_penalty ?? undefined,
       topK: req.extra_body?.topK,
       seed: req.extra_body?.seed,
+      ...(output != null && { output }),
     };
   }
 

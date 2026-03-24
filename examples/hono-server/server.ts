@@ -30,6 +30,12 @@ const adapter = createACP2OpenAI({
 
 const app = new Hono();
 
+// Global request logging middleware
+app.use('*', async (c, next) => {
+  console.log(`[${new Date().toISOString()}] ${c.req.method} ${c.req.url}`);
+  await next();
+});
+
 app.get('/', (c) =>
   c.json({
     name: 'acp2openai-hono-example',

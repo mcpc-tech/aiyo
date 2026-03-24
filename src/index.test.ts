@@ -47,6 +47,38 @@ vi.mock('ai', () => ({
       }).then(resolve),
   })),
   tool: vi.fn((def) => def),
+  Output: {
+    text: vi.fn(() => ({
+      name: 'text',
+      responseFormat: Promise.resolve({ type: 'text' }),
+      parseCompleteOutput: vi.fn(async ({ text }: { text: string }) => text),
+      parsePartialOutput: vi.fn(async ({ text }: { text: string }) => ({ partial: text })),
+      createElementStreamTransform: vi.fn(() => undefined),
+    })),
+    json: vi.fn(() => ({
+      name: 'json',
+      responseFormat: Promise.resolve({ type: 'json' }),
+      parseCompleteOutput: vi.fn(async ({ text }: { text: string }) => JSON.parse(text)),
+      parsePartialOutput: vi.fn(async ({ text }: { text: string }) => {
+        try { return { partial: JSON.parse(text) }; } catch { return undefined; }
+      }),
+      createElementStreamTransform: vi.fn(() => undefined),
+    })),
+    object: vi.fn(({ schema, name, description }: any) => ({
+      name: 'object',
+      responseFormat: Promise.resolve({
+        type: 'json',
+        ...(schema != null && { schema }),
+        ...(name != null && { name }),
+        ...(description != null && { description }),
+      }),
+      parseCompleteOutput: vi.fn(async ({ text }: { text: string }) => JSON.parse(text)),
+      parsePartialOutput: vi.fn(async ({ text }: { text: string }) => {
+        try { return { partial: JSON.parse(text) }; } catch { return undefined; }
+      }),
+      createElementStreamTransform: vi.fn(() => undefined),
+    })),
+  },
 }));
 
 describe('ACP2OpenAI (high-value unit tests)', () => {
@@ -481,6 +513,121 @@ describe('ACP2OpenAI (high-value unit tests)', () => {
 
     await expect(adapterWithoutConfig.handleChatCompletion(req)).rejects.toThrow(
       'ACP session config is required',
+    );
+  });
+
+  it('passes response_format json_object as output to generateText', async () => {
+    const { generateText } = await import('ai');
+
+    const req: OpenAIChatCompletionRequest = {
+      model: 'default',
+      messages: [{ role: 'user', content: 'return JSON' }],
+      response_format: { type: 'json_object' },
+    };
+
+    await adapter.handleChatCompletion(req);
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: expect.objectContaining({
+          name: 'json',
+        }),
+      }),
+    );
+  });
+
+  it('passes response_format json_schema as output with schema to generateText', async () => {
+    const { generateText } = await import('ai');
+
+    const testSchema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        age: { type: 'number' },
+      },
+      required: ['name', 'age'],
+    };
+
+    const req: OpenAIChatCompletionRequest = {
+      model: 'default',
+      messages: [{ role: 'user', content: 'return structured data' }],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'person',
+          description: 'A person object',
+          schema: testSchema,
+          strict: true,
+        },
+      },
+    };
+
+    await adapter.handleChatCompletion(req);
+
+    const callArgs = vi.mocked(generateText).mock.calls[0][0];
+    expect(callArgs.output).toBeDefined();
+    expect(callArgs.output!.name).toBe('object');
+
+    // Verify the responseFormat resolves to the correct shape
+    const resolvedFormat = await callArgs.output!.responseFormat;
+    expect(resolvedFormat).toEqual({
+      type: 'json',
+      schema: testSchema,
+      name: 'person',
+      description: 'A person object',
+    });
+  });
+
+  it('does not pass output when response_format is text', async () => {
+    const { generateText } = await import('ai');
+
+    const req: OpenAIChatCompletionRequest = {
+      model: 'default',
+      messages: [{ role: 'user', content: 'plain text' }],
+      response_format: { type: 'text' },
+    };
+
+    await adapter.handleChatCompletion(req);
+
+    const callArgs = vi.mocked(generateText).mock.calls[0][0];
+    expect(callArgs.output).toBeUndefined();
+  });
+
+  it('does not pass output when response_format is omitted', async () => {
+    const { generateText } = await import('ai');
+
+    const req: OpenAIChatCompletionRequest = {
+      model: 'default',
+      messages: [{ role: 'user', content: 'no format' }],
+    };
+
+    await adapter.handleChatCompletion(req);
+
+    const callArgs = vi.mocked(generateText).mock.calls[0][0];
+    expect(callArgs.output).toBeUndefined();
+  });
+
+  it('passes response_format json_object to streamText as well', async () => {
+    const { streamText } = await import('ai');
+
+    const req: OpenAIChatCompletionRequest = {
+      model: 'default',
+      stream: true,
+      messages: [{ role: 'user', content: 'stream JSON' }],
+      response_format: { type: 'json_object' },
+    };
+
+    const chunks: string[] = [];
+    for await (const chunk of adapter.handleChatCompletionStream(req)) {
+      chunks.push(chunk);
+    }
+
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: expect.objectContaining({
+          name: 'json',
+        }),
+      }),
     );
   });
 });
