@@ -1,28 +1,54 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createACP2OpenAI } from '../../src/index.js';
 
-function parseACPArgs(): string[] {
-  const raw = process.env.ACP_ARGS;
-  if (!raw) return [];
+interface FileConfig {
+  port?: number;
+  defaultModel?: string;
+  acp?: {
+    command?: string;
+    args?: string[];
+    cwd?: string;
+  };
+}
 
+function loadFileConfig(): FileConfig {
+  const configPath = resolve(process.env.ACP2OPENAI_CONFIG || 'acp2openai.config.json');
+  if (!existsSync(configPath)) return {};
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return raw.split(' ').map((s) => s.trim()).filter(Boolean);
+    return JSON.parse(readFileSync(configPath, 'utf-8')) as FileConfig;
+  } catch (e) {
+    console.warn(`[acp2openai] Failed to parse config file ${configPath}:`, e);
+    return {};
   }
 }
 
-const port = Number(process.env.PORT || 3000);
+function parseACPArgs(fallback?: string[]): string[] {
+  const raw = process.env.ACP_ARGS;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return raw.split(' ').map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return fallback ?? [];
+}
+
+const file = loadFileConfig();
+
+const port = Number(process.env.PORT || file.port || 3000);
 
 const adapter = createACP2OpenAI({
-  defaultModel: process.env.ACP_MODEL || 'default',
+  defaultModel: process.env.ACP_MODEL || file.defaultModel,
   defaultACPConfig: {
-    command: process.env.ACP_COMMAND || 'claude-agent-acp',
-    args: parseACPArgs(),
+    command: process.env.ACP_COMMAND || file.acp?.command || 'claude-agent-acp',
+    args: parseACPArgs(file.acp?.args),
     session: {
-      cwd: process.env.ACP_CWD || process.cwd(),
+      cwd: process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
       mcpServers: [],
     },
   },

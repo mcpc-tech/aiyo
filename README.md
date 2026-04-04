@@ -27,6 +27,30 @@ npm install @yaonyan/acp2openai-compatible
 
 ## Quick Start
 
+### Configuration File (Recommended)
+
+Create an `acp2openai.config.json` file:
+
+```json
+{
+  "port": 3456,
+  "defaultModel": "gpt-4",
+  "acp": {
+    "command": "codebuddy",
+    "args": ["--acp"],
+    "cwd": "/path/to/workspace"
+  }
+}
+```
+
+Set the config path via environment variable (defaults to `./acp2openai.config.json`):
+
+```bash
+export ACP2OPENAI_CONFIG=/path/to/config.json
+```
+
+**Config Priority:** File config < Environment variables
+
 ### Basic Usage (Hono)
 
 ```typescript
@@ -147,6 +171,12 @@ Creates a new ACP2OpenAI adapter instance.
 - `config` (optional):
   - `defaultACPConfig?: ACPProviderSettings` - Default ACP provider configuration (command, session, etc.)
   - `defaultModel?: string` - Default model name to use
+
+**Configuration Priority:**
+1. Request `extra_body.acpConfig` (highest priority)
+2. Environment variables (`ACP_COMMAND`, `ACP_ARGS`, `ACP_CWD`, `ACP_MODEL`, `PORT`)
+3. Config file (`acp2openai.config.json` or path from `ACP2OPENAI_CONFIG` env)
+4. `createACP2OpenAI()` parameters (lowest priority)
 
 **Returns:** `ACP2OpenAI` instance
 

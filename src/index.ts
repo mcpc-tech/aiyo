@@ -182,20 +182,21 @@ export class ACP2OpenAI {
     return acpConfig;
   }
 
-  private resolveModelName(req: OpenAIChatCompletionRequest): string {
-    return req.model || this.config.defaultModel || 'default';
+  private resolveModelId(req: OpenAIChatCompletionRequest): string | undefined {
+    const id = req.model || this.config.defaultModel;
+    return id || undefined;
   }
 
   private buildRuntime(req: OpenAIChatCompletionRequest): RuntimeContext {
-    const modelName = this.resolveModelName(req);
+    const modelId = this.resolveModelId(req);
     const provider = createACPProvider(this.ensureACPConfig(req));
 
     const providerTools = provider.tools as Record<string, any> | undefined;
     const requestTools = this.convertTools(req.tools);
 
     return {
-      model: provider.languageModel(modelName),
-      modelName,
+      model: provider.languageModel(modelId),
+      modelName: modelId ?? '',
       tools: this.mergeTools(providerTools, requestTools),
       toolChoice: this.convertToolChoice(req.tool_choice),
       allowedToolNames: this.getAllowedToolNames(req.tools),
@@ -378,7 +379,7 @@ export class ACP2OpenAI {
 
   private toChatCompletionRequestFromResponses(req: OpenAIResponsesRequest): OpenAIChatCompletionRequest {
     return {
-      model: req.model || this.config.defaultModel || 'default',
+      model: req.model || this.config.defaultModel || '',
       messages: this.convertResponsesInputToMessages(req),
       tools: this.convertResponsesTools(req.tools),
       tool_choice: this.convertResponsesToolChoice(req.tool_choice),
@@ -1105,7 +1106,7 @@ export class ACP2OpenAI {
     const chatReq = this.toChatCompletionRequestFromResponses({ ...req, stream: true });
     const responseId = `resp_${Math.random().toString(36).slice(2, 15)}`;
     const createdAt = Math.floor(Date.now() / 1000);
-    const modelName = chatReq.model || this.config.defaultModel || 'default';
+    const modelName = chatReq.model || 'default';
     const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
 
     yield `event: response.created\ndata: ${JSON.stringify({
