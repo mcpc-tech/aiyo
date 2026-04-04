@@ -57,7 +57,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@mcpc-tech/acp-ai-provider": "^0.2.7",
+    "@mcpc-tech/acp-ai-provider": "^0.3.1",
     "ai": "^6.0.116"
   },
   "devDependencies": {

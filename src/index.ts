@@ -678,10 +678,30 @@ export class ACP2OpenAI {
     if (typeof content === 'string') return content;
     if (Array.isArray(content)) {
       return content
-        .map((part: any) => ('text' in part ? part.text : JSON.stringify(part)))
+        .filter((part: any) => part.type === 'text')
+        .map((part: any) => part.text)
         .join('\n');
     }
     return '';
+  }
+
+  /**
+   * Convert OpenAI image_url parts to AI SDK FilePart format.
+   * ACP provider expects { type: 'file', mediaType, data } (LanguageModelV3FilePart).
+   */
+  private toImageFileParts(content: any): any[] {
+    if (!Array.isArray(content)) return [];
+    return content
+      .filter((part: any) => part.type === 'image_url' && part.image_url?.url)
+      .map((part: any) => {
+        const url: string = part.image_url.url;
+        if (url.startsWith('data:')) {
+          const [meta, data] = url.split(',');
+          const mediaType = meta.replace('data:', '').replace(';base64', '');
+          return { type: 'file' as const, mediaType, data };
+        }
+        return { type: 'file' as const, mediaType: 'image/jpeg', data: url };
+      });
   }
 
   private normalizeRole(role: ChatCompletionMessageParam['role']): 'system' | 'user' | 'assistant' {
@@ -750,9 +770,19 @@ export class ACP2OpenAI {
         return this.convertAssistantToolCallMessage(msg);
       }
 
+      const textContent = this.stringifyContent(msg.content);
+      const imageParts = msg.role === 'user' ? this.toImageFileParts(msg.content) : [];
+
+      if (imageParts.length > 0) {
+        const parts: any[] = [];
+        if (textContent) parts.push({ type: 'text', text: textContent });
+        parts.push(...imageParts);
+        return { role: 'user', content: parts };
+      }
+
       return {
         role: this.normalizeRole(msg.role),
-        content: this.stringifyContent(msg.content),
+        content: textContent,
       };
     }) as ModelMessage[];
   }
