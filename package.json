@@ -31,12 +31,12 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:integration:simple": "tsx test-integration-simple.ts",
-    "example:hono": "tsx examples/hono-server/server.ts",
     "test:all": "npm run test:unit && npm run test:integration",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "example:hono": "tsx examples/hono-server/server.ts",
+    "example:express": "tsx examples/express/server.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createACP2OpenAI } from '../../dist/index.mjs';
+import { createACP2OpenAI } from '../../src/index.js';
 
 const app = express();
 app.use(express.json());

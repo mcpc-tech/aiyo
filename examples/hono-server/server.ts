@@ -56,10 +56,43 @@ const adapter = createACP2OpenAI({
 
 const app = new Hono();
 
-// Global request logging middleware
+// Global request logging middleware (request + response body)
 app.use('*', async (c, next) => {
-  console.log(`[${new Date().toISOString()}] ${c.req.method} ${c.req.url}`);
+  const ts = new Date().toISOString();
+  process.stderr.write(`\n[${ts}] >>> ${c.req.method} ${c.req.url}\n`);
+
+  // Log request body for POST/PUT/PATCH (clone to avoid consuming)
+  if (['POST', 'PUT', 'PATCH'].includes(c.req.method)) {
+    try {
+      const body = await c.req.json();
+      process.stderr.write(`[${ts}] REQ BODY: ${JSON.stringify(body, null, 2)}\n`);
+    } catch {
+      process.stderr.write(`[${ts}] REQ BODY: <non-json>\n`);
+    }
+  }
+
   await next();
+
+  // Log response body
+  const res = c.res;
+  if (res) {
+    try {
+      const clone = res.clone();
+      const text = await clone.text();
+      let display: string;
+      try {
+        display = JSON.stringify(JSON.parse(text), null, 2);
+        if (display.length > 2000) {
+          display = display.slice(0, 2000) + '\n... (truncated)';
+        }
+      } catch {
+        display = text.length > 2000 ? text.slice(0, 2000) + '...' : text;
+      }
+      process.stderr.write(`[${ts}] <<< STATUS ${res.status} RESP BODY: ${display}\n`);
+    } catch {
+      process.stderr.write(`[${ts}] <<< STATUS ${res.status} RESP BODY: <stream/unreadable>\n`);
+    }
+  }
 });
 
 app.get('/', (c) =>

@@ -1,23 +1,22 @@
 # @yaonyan/acp2openai-compatible
 
-**OpenAI-compatible API adapter** for [ACP (Agent Client Protocol)](https://github.com/mcpc-tech/mcpc) providers using the [AI SDK](https://ai-sdk.dev/).
+OpenAI-compatible HTTP adapter for ACP (Agent Client Protocol) providers, built on top of the AI SDK.
 
-This library enables you to expose ACP-compatible agents through an OpenAI-compatible HTTP API, making it easy to integrate with existing OpenAI client libraries and tools.
+This package lets you expose an ACP-backed agent or model through familiar OpenAI-style endpoints, so existing OpenAI SDK clients and tools can talk to it with minimal changes.
 
-## Features
+## What it supports
 
-- **OpenAI-compatible APIs** - Supports `/v1/models`, `/v1/chat/completions`, and `/v1/responses`
-- **Streaming support** - SSE-based streaming responses
-- **Framework agnostic** - Built-in adapters for Hono, Express, and standard Request/Response
-- **vLLM-style extra parameters** - Pass ACP-specific config via `extra_body`
-- **Built with AI SDK** - Leverages Vercel's AI SDK internally for robust model interactions
-- **TypeScript-first** - Full type safety with comprehensive type definitions
+- `GET /v1/models`
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- Streaming responses over SSE
+- OpenAI function calling / tool calling
+- Request-level ACP configuration via `extra_body.acpConfig`
+- Framework adapters for standard Web `Request`, Express, and Hono
 
-## OpenAI API Reference Links
+## What it does not try to be
 
-- Models List: [OpenAI API - List models](https://developers.openai.com/api/reference/resources/models/methods/list)
-- Chat Completions: [OpenAI API - Create chat completion](https://developers.openai.com/docs/api-reference/chat/create)
-- Responses: [OpenAI API - Responses](https://developers.openai.com/docs/api-reference/responses)
+This package is **not** a full OpenAI server replacement. Today it focuses on chat-style flows and tool calls. Endpoints such as embeddings, images, audio, files, batches, and assistants are out of scope.
 
 ## Installation
 
@@ -25,16 +24,103 @@ This library enables you to expose ACP-compatible agents through an OpenAI-compa
 npm install @yaonyan/acp2openai-compatible
 ```
 
-## Quick Start
+## Requirements
 
-### Configuration File (Recommended)
+- Node.js `>= 18`
+- An ACP-compatible command or runtime
 
-Create an `acp2openai.config.json` file:
+## Quick start
+
+### Library usage with default ACP config
+
+Use `defaultACPConfig` when you want the adapter instance itself to know how to start the ACP provider.
+
+```ts
+import { Hono } from 'hono';
+import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
+
+const adapter = createACP2OpenAI({
+  defaultModel: 'default',
+  defaultACPConfig: {
+    command: 'claude-agent-acp',
+    args: [],
+    session: {
+      cwd: process.cwd(),
+      mcpServers: [],
+    },
+  },
+});
+
+const app = new Hono();
+
+app.get('/v1/models', adapter.honoHandler());
+app.post('/v1/chat/completions', adapter.honoHandler());
+app.post('/v1/responses', adapter.honoHandler());
+```
+
+### Request-level ACP config via `extra_body`
+
+Use request-level config when the caller should decide which ACP provider/session to use.
+
+```ts
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:3000/v1',
+  apiKey: 'dummy',
+});
+
+const response = await client.chat.completions.create({
+  model: 'default',
+  messages: [{ role: 'user', content: 'Hello!' }],
+  extra_body: {
+    acpConfig: {
+      command: 'claude-agent-acp',
+      args: [],
+      session: {
+        cwd: process.cwd(),
+        mcpServers: [],
+      },
+    },
+  },
+});
+
+console.log(response.choices[0].message.content);
+```
+
+### Important config rule
+
+You must provide ACP config in **one** of these two places:
+
+- `createACP2OpenAI({ defaultACPConfig })`, or
+- request-level `extra_body.acpConfig`
+
+Without one of those, chat and responses requests will fail because the adapter has no ACP runtime to call.
+
+## Included examples
+
+This repo includes two runnable example servers:
+
+- `examples/hono-server/server.ts`
+- `examples/express/server.ts`
+
+From the repo root:
+
+```bash
+npm run example:hono
+npm run example:express
+```
+
+### Local config file for the Hono example
+
+The Hono example includes file/env loading for local development. That config loading is implemented in the example app, **not** in the core library.
+
+Example local config:
 
 ```json
 {
   "port": 3456,
-  "defaultModel": "gpt-4",
+  "defaultModel": "default",
   "acp": {
     "command": "codebuddy",
     "args": ["--acp"],
@@ -43,435 +129,129 @@ Create an `acp2openai.config.json` file:
 }
 ```
 
-Set the config path via environment variable (defaults to `./acp2openai.config.json`):
+You can point the example server at a different config file with:
 
 ```bash
 export ACP2OPENAI_CONFIG=/path/to/config.json
 ```
 
-**Config Priority:** File config < Environment variables
+The root `acp2openai.config.json` is intended to be a local development file and is gitignored.
 
-### Basic Usage (Hono)
-
-```typescript
-import { Hono } from 'hono';
-import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
-
-const app = new Hono();
-
-const adapter = createACP2OpenAI();
-
-// Mount OpenAI-compatible endpoints
-app.get('/v1/models', adapter.honoHandler());
-app.post('/v1/chat/completions', adapter.honoHandler());
-app.post('/v1/responses', adapter.honoHandler());
-
-export default app;
-```
-
-### Basic Usage (Express)
-
-```typescript
-import express from 'express';
-import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
-
-const app = express();
-app.use(express.json());
-
-const adapter = createACP2OpenAI();
-
-// Mount OpenAI-compatible endpoints
-app.get('/v1/models', adapter.expressHandler());
-app.post('/v1/chat/completions', adapter.expressHandler());
-app.post('/v1/responses', adapter.expressHandler());
-
-app.listen(3000, () => {
-  console.log('Server listening on http://localhost:3000');
-});
-```
-
-### Get Models List (`GET /v1/models`)
-
-Once your server is running, you can fetch the available models list.
-
-**Note:** this endpoint initializes an ACP session internally (`initSession`) to discover real model capabilities, so `defaultACPConfig` must be provided when creating the adapter.
-
-```bash
-curl -s http://localhost:3000/v1/models
-```
-
-Example response:
-
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "default",
-      "object": "model",
-      "created": 1735689600,
-      "owned_by": "acp-provider"
-    }
-  ]
-}
-```
-
-You can also call it with the OpenAI SDK:
-
-```typescript
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  baseURL: 'http://localhost:3000/v1',
-  apiKey: 'dummy',
-});
-
-const models = await client.models.list();
-console.log(models.data.map((m) => m.id));
-```
-
-### Using with OpenAI Client
-
-Once your server is running, use any OpenAI-compatible client:
-
-```typescript
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  baseURL: 'http://localhost:3000/v1',
-  apiKey: 'dummy', // Not validated by @yaonyan/acp2openai-compatible
-});
-
-const response = await client.chat.completions.create({
-  model: 'default',
-  messages: [
-    { role: 'user', content: 'Hello!' }
-  ],
-  extra_body: {
-    acpConfig: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-example'],
-      session: {
-        cwd: process.cwd(),
-      }
-    }
-  }
-});
-
-console.log(response.choices[0].message.content);
-```
-
-## API Reference
+## API surface
 
 ### `createACP2OpenAI(config?)`
 
-Creates a new ACP2OpenAI adapter instance.
+Creates an `ACP2OpenAI` adapter instance.
 
-**Parameters:**
-- `config` (optional):
-  - `defaultACPConfig?: ACPProviderSettings` - Default ACP provider configuration (command, session, etc.)
-  - `defaultModel?: string` - Default model name to use
+#### Config
 
-**Configuration Priority:**
-1. Request `extra_body.acpConfig` (highest priority)
-2. Environment variables (`ACP_COMMAND`, `ACP_ARGS`, `ACP_CWD`, `ACP_MODEL`, `PORT`)
-3. Config file (`acp2openai.config.json` or path from `ACP2OPENAI_CONFIG` env)
-4. `createACP2OpenAI()` parameters (lowest priority)
+- `defaultACPConfig?: ACPProviderSettings`
+- `defaultModel?: string`
 
-**Returns:** `ACP2OpenAI` instance
+### `adapter.handleRequest(request)`
 
----
+Framework-agnostic Web API handler for environments that use standard `Request` / `Response` objects.
 
-### `ACP2OpenAI` Class
+Works well with:
 
-#### Methods
-
-##### `handleRequest(request: Request): Promise<Response>`
-
-Framework-agnostic handler for standard Web `Request`/`Response`. Works with:
-- Hono
 - Cloudflare Workers
 - Bun
 - Deno
-- Any platform supporting Web Standards
+- any Web-standard runtime
 
-```typescript
-const adapter = createACP2OpenAI({ defaultACPConfig: { /* ... */ } });
+### `adapter.expressHandler()`
 
-app.fetch = (request) => adapter.handleRequest(request);
-```
+Returns Express-style middleware.
 
-##### `expressHandler()`
+### `adapter.honoHandler()`
 
-Returns Express/Node.js-style middleware.
+Returns Hono-style middleware.
 
-```typescript
-app.get('/v1/models', adapter.expressHandler());
-app.post('/v1/chat/completions', adapter.expressHandler());
-app.post('/v1/responses', adapter.expressHandler());
-```
+### `adapter.handleChatCompletion(req)`
 
-##### `honoHandler()`
+Low-level non-streaming handler that returns an OpenAI-compatible chat completion object.
 
-Returns Hono-style handler.
+### `adapter.handleChatCompletionStream(req)`
 
-```typescript
-app.post('/v1/chat/completions', adapter.honoHandler());
-```
+Low-level streaming handler that yields SSE-formatted chunks.
 
-##### `handleChatCompletion(req): Promise<OpenAIChatCompletionResponse>`
+### `adapter.handleResponses(req)`
 
-Low-level non-streaming handler. Returns a complete OpenAI-compatible response object.
+Low-level non-streaming handler for the OpenAI `responses` shape.
 
-##### `handleChatCompletionStream(req): AsyncIterable<string>`
+## Endpoint notes
 
-Low-level streaming handler. Returns an async iterable of SSE-formatted strings.
+### `GET /v1/models`
 
----
+`GET /v1/models` needs `defaultACPConfig`, because the adapter must initialize an ACP session to discover available models.
 
-## Request Format
+### `POST /v1/chat/completions`
 
-### Standard OpenAI Parameters
+Accepts standard OpenAI chat-completions fields, plus `extra_body` for ACP / AI SDK extras.
 
-```typescript
-{
-  model: string;                    // Model name
-  messages: Array<{                 // Chat messages
-    role: 'system' | 'user' | 'assistant';
-    content: string;
-  }>;
-  
-  // Optional OpenAI parameters
-  temperature?: number;
-  max_tokens?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  stream?: boolean;                 // Enable streaming
-}
-```
+### `POST /v1/responses`
 
-### Extra Parameters (vLLM-style)
+Implemented by translating the request to chat-completions internally, then mapping the result back into the OpenAI responses shape.
 
-ACP-specific and AI SDK parameters can be passed via `extra_body`:
+## Extra parameters
 
-```typescript
+ACP-specific and AI SDK-specific extras are passed through `extra_body`.
+
+```ts
 {
   extra_body: {
-    // ACP Provider Configuration (required if no defaultACPConfig)
     acpConfig: {
-      command: string;              // Command to execute the ACP agent
-      args?: string[];              // Arguments for the command
-      env?: Record<string, string>; // Environment variables
-      session: {                    // ACP session config
-        cwd: string;
-        mcpServers?: { /* ... */ };
-        // ... other NewSessionRequest fields
-      };
-      initialize?: { /* ... */ };   // ACP initialize config
-      authMethodId?: string;
-      existingSessionId?: string;
-      persistSession?: boolean;
-      sessionDelayMs?: number;
-    },
-    
-    // AI SDK-specific settings
-    topK?: number;
-    seed?: number;
-  }
-}
-```
-
-**Note:** Either `extra_body.acpConfig` or `defaultACPConfig` must be provided.
-
----
-
-## Examples
-
-### Example 1: Hono with Default Config
-
-```typescript
-import { Hono } from 'hono';
-import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
-
-const app = new Hono();
-
-const adapter = createACP2OpenAI({
-  defaultACPConfig: {
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-example'],
-    session: {
-      cwd: process.cwd(),
-    },
-  },
-  defaultModel: 'gpt-4',
-});
-
-app.get('/v1/models', adapter.honoHandler());
-app.post('/v1/chat/completions', adapter.honoHandler());
-app.post('/v1/responses', adapter.honoHandler());
-
-export default app;
-```
-
-### Example 2: Express with Streaming
-
-```typescript
-import express from 'express';
-import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
-
-const app = express();
-app.use(express.json());
-
-const adapter = createACP2OpenAI();
-
-app.post('/v1/chat/completions', adapter.expressHandler());
-
-app.listen(3000);
-```
-
-Client code:
-```typescript
-const stream = await client.chat.completions.create({
-  model: 'default',
-  messages: [{ role: 'user', content: 'Count to 10' }],
-  stream: true,
-  extra_body: {
-    acpConfig: { /* ... */ }
-  }
-});
-
-for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || '');
-}
-```
-
-### Example 3: Cloudflare Workers
-
-```typescript
-import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
-
-const adapter = createACP2OpenAI({
-  defaultACPConfig: {
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-example'],
-    session: {
-      cwd: '/tmp',
-    },
-  },
-});
-
-export default {
-  async fetch(request: Request) {
-    return adapter.handleRequest(request);
-  },
-};
-```
-
----
-
-## Advanced Usage
-
-### Custom Model Routing
-
-```typescript
-import { ACP2OpenAI } from '@yaonyan/acp2openai-compatible';
-
-class CustomAdapter extends ACP2OpenAI {
-  async handleChatCompletion(req) {
-    // Inject custom logic based on model
-    if (req.model === 'my-special-model') {
-      req.extra_body = {
-        acpConfig: {
-          command: 'custom-agent',
-          session: { /* ... */ }
-        }
-      };
-    }
-    return super.handleChatCompletion(req);
-  }
-}
-
-const adapter = new CustomAdapter();
-```
-
-### Error Handling
-
-```typescript
-app.post('/v1/chat/completions', async (req, res) => {
-  try {
-    return adapter.expressHandler()(req, res);
-  } catch (error) {
-    console.error('ACP error:', error);
-    res.status(500).json({
-      error: {
-        message: error.message,
-        type: 'acp_error',
+      command: 'claude-agent-acp',
+      args: [],
+      session: {
+        cwd: process.cwd(),
+        mcpServers: [],
+      },
+      env: {
+        MY_FLAG: '1'
       }
-    });
+    },
+    topK: 20,
+    seed: 42
   }
-});
+}
 ```
 
----
+## How it works
 
-## How It Works
-
-1. **Request arrives** in OpenAI format (`/v1/models`, `/v1/chat/completions`, or `/v1/responses`)
-2. **ACP config** is extracted from `extra_body.acpConfig` or `defaultACPConfig`
-3. **ACP provider** is initialized via `@mcpc-tech/acp-ai-provider`
-4. **AI SDK** (`generateText` / `streamText`) executes the request
-5. **Response** is converted back to OpenAI format and returned
-
----
+1. Receives an OpenAI-compatible HTTP request.
+2. Resolves ACP runtime config from `extra_body.acpConfig` or `defaultACPConfig`.
+3. Creates an ACP provider via `@mcpc-tech/acp-ai-provider`.
+4. Uses the AI SDK to run generation or streaming.
+5. Maps the result back into OpenAI-compatible response shapes.
 
 ## Testing
 
-This project includes a comprehensive test suite with **65%+ coverage**.
-
-### Running Tests
+### Main commands
 
 ```bash
-# Run all tests
 npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with UI
-npm run test:ui
-
-# Generate coverage report
+npm run test:unit
+npm run test:integration
+npm run test:all
 npm run test:coverage
 ```
 
-### Test Coverage
+### Test layout
 
-The test suite covers:
-- Message conversion (system, user, assistant, tool)
-- Tool definition and tool choice handling
-- Chat completion (streaming and non-streaming)
-- Request/response format validation
-- Edge cases and error handling
+- `src/index.test.ts`: fast unit tests with mocks
+- `src/index.integration.test.ts`: real ACP integration tests
 
-For more details, see [TEST.md](./TEST.md).
+Integration tests expect `claude-agent-acp` to be available in `PATH`. Tests that require it are skipped automatically when the command is missing.
 
----
+For more detail, see [`TEST.md`](./TEST.md).
+
+## Related packages and specs
+
+- [ACP (Agent Client Protocol)](https://github.com/mcpc-tech/mcpc)
+- [AI SDK](https://ai-sdk.dev/)
+- [OpenAI API docs](https://platform.openai.com/docs/api-reference)
 
 ## License
 
 MIT
-
----
-
-## Related Projects
-
-- [ACP (Agent Client Protocol)](https://github.com/mcpc-tech/mcpc)
-- [AI SDK by Vercel](https://ai-sdk.dev/)
-- [vLLM OpenAI-compatible server](https://docs.vllm.ai/en/latest/serving/openai_compatible_server/)
-
----
-
-## Contributing
-
-Contributions are welcome! Please open an issue or PR on GitHub.

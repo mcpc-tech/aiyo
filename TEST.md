@@ -1,135 +1,103 @@
 # Testing Guide
 
-This project includes comprehensive test coverage with both **unit tests** (mocked) and **integration tests** (real ACP connection).
+This repository has two layers of tests:
 
-## Test Types
+- unit tests that validate adapter behavior with mocks
+- integration tests that exercise a real ACP runtime
 
-### 1. Unit Tests (Mock-based)
-- **Location**: `src/index.test.ts`
-- **Coverage**: 65%+
-- **Runtime**: Fast (~1s)
-- **Purpose**: Test core logic without external dependencies
+## Test files
 
-### 2. Integration Tests (Real ACP)
-- **Location**: `test-integration-simple.ts`
-- **Runtime**: Slower (~10s)
-- **Purpose**: Verify real connectivity with ACP provider
-- **Requires**: `claude-agent-acp` command available in PATH
+### Unit tests
 
-## Running Tests
+- **File**: `src/index.test.ts`
+- **Purpose**: validate request mapping, tool handling, streaming, `/v1/models`, and response-format behavior
+- **Speed**: fast
+- **Dependencies**: no external ACP runtime required
+
+### Integration tests
+
+- **File**: `src/index.integration.test.ts`
+- **Purpose**: verify the adapter against a real `claude-agent-acp` command
+- **Speed**: slower
+- **Dependencies**: `claude-agent-acp` available in `PATH`
+
+## Commands
 
 ```bash
-# Run unit tests (fast, mocked)
+# Unit tests
 npm test
-# or
 npm run test:unit
 
-# Run simple integration test (real ACP connection) ⭐ RECOMMENDED
-npm run test:integration:simple
+# Real ACP integration tests
+npm run test:integration
 
-# Run all tests
+# Full suite
 npm run test:all
 
-# Watch mode (unit tests only)
+# Watch mode
 npm run test:watch
 
-# Test UI
-npm run test:ui
-
-# Coverage report
+# Coverage
 npm run test:coverage
 ```
 
-## Integration Test Results ✅
+## How integration tests behave
 
-**Test 1: Basic Chat Completion**
-```
-✅ Model: default
-✅ Command: claude-agent-acp
-✅ Response: Working
-✅ Usage tracking: Implemented
-```
+The integration suite checks whether `claude-agent-acp` is installed before running ACP-dependent tests.
 
-**Test 2: Streaming Chat Completion**
-```
-✅ Stream chunks: Working
-✅ Content streaming: Working
-✅ [DONE] marker: Working
-```
+If it is not available:
 
-## Test Configuration
+- ACP-dependent integration tests are skipped
+- unit tests still run normally
 
-The project uses Vitest as the test framework:
-- `vitest.config.ts` - Unit test configuration
-- `vitest.integration.config.ts` - Integration test configuration (Vitest-based)
-- `test-integration-simple.ts` - Simple real-world integration test (Manual)
+## What is covered
 
-## What's Tested
+### Unit coverage focus
 
-### Unit Tests (19 test cases)
-- ✅ Factory function creation
-- ✅ Message conversion (system, user, assistant, tool)
-- ✅ Tool definition conversion
-- ✅ Tool choice handling
-- ✅ Chat completion (streaming and non-streaming)
-- ✅ Request/response format validation
-- ✅ Edge cases and error handling
+- request-to-AI-SDK conversion
+- OpenAI message conversion
+- tool definition wrapping and tool-call unwrapping
+- forced tool choice behavior
+- streaming SSE output
+- `/v1/models` behavior
+- `response_format` handling
+- error paths around missing ACP config
 
-### Integration Tests
-- ✅ Real ACP connection with `claude-agent-acp`
-- ✅ Basic chat completion request
-- ✅ Streaming chat completion
-- ✅ Response format validation
-- ✅ Verified working configuration
+### Integration coverage focus
 
-## Verified ACP Configuration ✅
-
-The tests confirm this configuration works with real ACP:
-
-```typescript
-{
-  defaultModel: 'default',  // Use 'default' model (no auth required)
-  defaultACPConfig: {
-    command: 'claude-agent-acp',
-    args: [],
-    session: {
-      cwd: process.cwd(),
-      mcpServers: [],
-    },
-  },
-}
-```
-
-## Test Results Summary
-
-| Test Type | Count | Status | Coverage |
-|-----------|-------|--------|----------|
-| Unit Tests | 19 | ✅ Pass | 65.78% |
-| Integration Tests | 2 | ✅ Pass | Real ACP |
-| **Total** | **21** | **✅ All Pass** | **Complete** |
+- real models discovery through `/v1/models`
+- real chat completion
+- real streaming chat completion
+- real tool-calling behavior
 
 ## Troubleshooting
 
-**Error: "Model not available"**
-- Use `'default'` model instead of `'sonnet'` or `'claude-agent-acp'`
-- Available models: `default`, `sonnet[1]`, `opus[1]`, `haiku`, `openrouter/free`
-- Models marked with `[1]` require authentication
+### `claude-agent-acp` not found
 
-**Error: "Command not found: claude-agent-acp"**
-- Install: `npm install -g @zed-industries/claude-agent-acp`
-- Or use your own ACP-compatible command
+Install or expose a compatible ACP command in `PATH`, then rerun:
 
-**Error: "EPIPE" or timeout**
-- Check your ACP command is working: `claude-agent-acp --version`
-- Try the simple integration test: `npm run test:integration:simple`
-
-## Continuous Integration
-
-For CI/CD pipelines:
 ```bash
-# Fast unit tests only (recommended for CI)
-npm run test:unit
+npm run test:integration
+```
 
-# Full test suite (if ACP is available in CI)
+### Integration tests are slow or flaky
+
+That usually points to the underlying ACP runtime, network, authentication, or model availability rather than the unit-test harness itself.
+
+### Coverage differences
+
+Coverage will move over time as tests and source change. Treat it as a current measurement from the test run, not a hardcoded repo guarantee.
+
+## CI suggestion
+
+For lightweight CI:
+
+```bash
+npm run test:unit
+```
+
+For environments that also provide a working ACP runtime:
+
+```bash
 npm run test:all
 ```
