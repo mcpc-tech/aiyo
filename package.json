@@ -37,6 +37,7 @@
     "test:coverage": "vitest run --coverage",
     "example:hono": "tsx examples/hono-server/server.ts",
     "example:express": "tsx examples/express/server.ts",
+    "gateway:start": "bash scripts/start-acp2openai.sh",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

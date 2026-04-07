@@ -6,3 +6,4 @@ dist
 midscene_run
 droidrun*
 acp2openai.config.json
+.droidrun-local/

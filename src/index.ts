@@ -3,9 +3,9 @@ import {
   acpTools,
   createACPProvider,
   type ACPProviderSettings,
-} from '@mcpc-tech/acp-ai-provider';
-import { generateText, streamText, Output, type ModelMessage, tool } from 'ai';
-import { z } from 'zod/v4';
+} from "@mcpc-tech/acp-ai-provider";
+import { generateText, streamText, Output, type ModelMessage, tool } from "ai";
+import { z } from "zod/v4";
 import type {
   ChatCompletion,
   ChatCompletionChunk,
@@ -14,12 +14,12 @@ import type {
   ChatCompletionTool,
   ChatCompletionToolChoiceOption,
   ChatCompletionMessageFunctionToolCall,
-} from 'openai/resources/chat/completions';
+} from "openai/resources/chat/completions";
 import type {
   ResponseFormatText,
   ResponseFormatJSONSchema,
   ResponseFormatJSONObject,
-} from 'openai/resources/shared';
+} from "openai/resources/shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type aliases - use OpenAI SDK types directly
@@ -38,22 +38,30 @@ export interface OpenAIExtraBody {
 }
 
 // Extend OpenAI types with ACP-specific fields via extra_body
-export interface OpenAIChatCompletionRequest extends Omit<ChatCompletionCreateParams, 'extra_body'> {
+export interface OpenAIChatCompletionRequest extends Omit<
+  ChatCompletionCreateParams,
+  "extra_body"
+> {
   extra_body?: OpenAIExtraBody;
 }
 
 export interface OpenAIResponsesInputMessage {
   type?: string;
-  role?: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
+  role?: "system" | "developer" | "user" | "assistant" | "tool";
   content?:
     | string
-    | Array<{ type?: string; text?: string; input_text?: string; output_text?: string }>;
+    | Array<{
+        type?: string;
+        text?: string;
+        input_text?: string;
+        output_text?: string;
+      }>;
   tool_call_id?: string;
   call_id?: string;
 }
 
 export interface OpenAIResponsesFunctionTool {
-  type: 'function';
+  type: "function";
   name: string;
   description?: string;
   parameters?: Record<string, unknown>;
@@ -63,12 +71,12 @@ export interface OpenAIResponsesFunctionTool {
 export type OpenAIResponsesTool = OpenAIResponsesFunctionTool;
 
 export type OpenAIResponsesToolChoice =
-  | 'auto'
-  | 'none'
-  | 'required'
-  | { type: 'function'; name: string }
-  | { type: 'tool'; name: string }
-  | { type: 'function'; function: { name: string } };
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "function"; name: string }
+  | { type: "tool"; name: string }
+  | { type: "function"; function: { name: string } };
 
 export interface OpenAIResponsesRequest {
   model?: string;
@@ -87,29 +95,29 @@ export interface OpenAIResponsesRequest {
 
 export interface OpenAIResponsesResponse {
   id: string;
-  object: 'response';
+  object: "response";
   created_at: number;
-  status: 'completed';
+  status: "completed";
   model: string;
   output: Array<
     | {
-        type: 'message';
+        type: "message";
         id: string;
-        role: 'assistant';
-        status: 'completed';
+        role: "assistant";
+        status: "completed";
         content: Array<{
-          type: 'output_text';
+          type: "output_text";
           text: string;
           annotations: unknown[];
         }>;
       }
     | {
-        type: 'function_call';
+        type: "function_call";
         id: string;
         call_id: string;
         name: string;
         arguments: string;
-        status: 'completed';
+        status: "completed";
       }
   >;
   usage: {
@@ -121,13 +129,13 @@ export interface OpenAIResponsesResponse {
 
 export interface OpenAIModelObject {
   id: string;
-  object: 'model';
+  object: "model";
   created: number;
   owned_by: string;
 }
 
 export interface OpenAIModelListResponse {
-  object: 'list';
+  object: "list";
   data: OpenAIModelObject[];
 }
 
@@ -143,22 +151,32 @@ export interface ACP2OpenAIConfig {
   defaultModel?: string;
 }
 
-const CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
-const RESPONSES_PATH = '/v1/responses';
-const MODELS_PATH = '/v1/models';
+const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
+const RESPONSES_PATH = "/v1/responses";
+const MODELS_PATH = "/v1/models";
 const SSE_HEADERS = {
-  'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
-  Connection: 'keep-alive',
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
 } as const;
 
-type OpenAIFinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call';
+type OpenAIFinishReason =
+  | "stop"
+  | "length"
+  | "tool_calls"
+  | "content_filter"
+  | "function_call";
 
 type RuntimeContext = {
   model: any;
   modelName: string;
   tools: Record<string, any> | undefined;
-  toolChoice: 'auto' | 'none' | 'required' | { type: 'tool'; toolName: string } | undefined;
+  toolChoice:
+    | "auto"
+    | "none"
+    | "required"
+    | { type: "tool"; toolName: string }
+    | undefined;
   allowedToolNames: Set<string>;
   forcedToolName?: string;
 };
@@ -174,10 +192,14 @@ export class ACP2OpenAI {
     this.config = config;
   }
 
-  private ensureACPConfig(req: OpenAIChatCompletionRequest): ACPProviderSettings {
+  private ensureACPConfig(
+    req: OpenAIChatCompletionRequest,
+  ): ACPProviderSettings {
     const acpConfig = req.extra_body?.acpConfig || this.config.defaultACPConfig;
     if (!acpConfig) {
-      throw new Error('ACP session config is required (via extra_body.acpConfig or defaultACPConfig)');
+      throw new Error(
+        "ACP session config is required (via extra_body.acpConfig or defaultACPConfig)",
+      );
     }
     return acpConfig;
   }
@@ -193,41 +215,47 @@ export class ACP2OpenAI {
 
     const providerTools = provider.tools as Record<string, any> | undefined;
     const requestTools = this.convertTools(req.tools);
+    const allowedToolNames = this.getAllowedToolNames(req.tools);
 
     return {
       model: provider.languageModel(modelId),
-      modelName: modelId ?? '',
+      modelName: modelId ?? "",
       tools: this.mergeTools(providerTools, requestTools),
-      toolChoice: this.convertToolChoice(req.tool_choice),
-      allowedToolNames: this.getAllowedToolNames(req.tools),
-      forcedToolName: this.getForcedToolName(req.tool_choice),
+      toolChoice: this.convertToolChoice(req.tool_choice, req.tools),
+      allowedToolNames,
+      forcedToolName: this.getForcedToolName(req.tool_choice, req.tools),
     };
   }
 
   private convertResponseFormat(
-    responseFormat?: ResponseFormatText | ResponseFormatJSONSchema | ResponseFormatJSONObject,
+    responseFormat?:
+      | ResponseFormatText
+      | ResponseFormatJSONSchema
+      | ResponseFormatJSONObject,
   ): ReturnType<typeof Output.json> | undefined {
     if (!responseFormat) return undefined;
 
     switch (responseFormat.type) {
-      case 'text':
+      case "text":
         return undefined; // default behavior
 
-      case 'json_object':
+      case "json_object":
         return Output.json();
 
-      case 'json_schema': {
+      case "json_schema": {
         const { json_schema } = responseFormat as ResponseFormatJSONSchema;
         // Build a custom Output that passes the JSON Schema directly to the provider.
         // We can't use Output.object() because that requires a Zod schema,
         // and we have an arbitrary JSON Schema from the OpenAI request.
         return {
-          name: 'object',
+          name: "object",
           responseFormat: Promise.resolve({
-            type: 'json' as const,
+            type: "json" as const,
             ...(json_schema.schema != null && { schema: json_schema.schema }),
             ...(json_schema.name != null && { name: json_schema.name }),
-            ...(json_schema.description != null && { description: json_schema.description }),
+            ...(json_schema.description != null && {
+              description: json_schema.description,
+            }),
           }),
           async parseCompleteOutput({ text }: { text: string }) {
             try {
@@ -269,60 +297,74 @@ export class ACP2OpenAI {
     };
   }
 
-  private stringifyResponsesInputContent(content: OpenAIResponsesInputMessage['content']): string {
-    if (typeof content === 'string') return content;
-    if (!Array.isArray(content)) return '';
+  private stringifyResponsesInputContent(
+    content: OpenAIResponsesInputMessage["content"],
+  ): string {
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
 
     return content
       .map((part) => {
-        if (typeof part.text === 'string') return part.text;
-        if (typeof part.input_text === 'string') return part.input_text;
-        if (typeof part.output_text === 'string') return part.output_text;
-        return '';
+        if (typeof part.text === "string") return part.text;
+        if (typeof part.input_text === "string") return part.input_text;
+        if (typeof part.output_text === "string") return part.output_text;
+        return "";
       })
       .filter(Boolean)
-      .join('\n');
+      .join("\n");
   }
 
-  private convertResponsesTools(tools?: OpenAIResponsesTool[]): OpenAITool[] | undefined {
+  private convertResponsesTools(
+    tools?: OpenAIResponsesTool[],
+  ): OpenAITool[] | undefined {
     if (!tools || tools.length === 0) return undefined;
 
     const mapped = tools
-      .filter((tool): tool is OpenAIResponsesFunctionTool => tool.type === 'function' && !!tool.name)
+      .filter(
+        (tool): tool is OpenAIResponsesFunctionTool =>
+          tool.type === "function" && !!tool.name,
+      )
       .map((tool) => ({
-        type: 'function' as const,
+        type: "function" as const,
         function: {
           name: tool.name,
           description: tool.description,
-          parameters: tool.parameters ?? { type: 'object', properties: {} },
+          parameters: tool.parameters ?? { type: "object", properties: {} },
         },
       }));
 
     return mapped.length > 0 ? mapped : undefined;
   }
 
-  private convertResponsesToolChoice(toolChoice?: OpenAIResponsesToolChoice): ChatCompletionToolChoiceOption | undefined {
+  private convertResponsesToolChoice(
+    toolChoice?: OpenAIResponsesToolChoice,
+  ): ChatCompletionToolChoiceOption | undefined {
     if (!toolChoice) return undefined;
-    if (toolChoice === 'none' || toolChoice === 'auto' || toolChoice === 'required') return toolChoice;
+    if (
+      toolChoice === "none" ||
+      toolChoice === "auto" ||
+      toolChoice === "required"
+    )
+      return toolChoice;
 
-    if (typeof toolChoice === 'object') {
-      if (toolChoice.type === 'function' && 'name' in toolChoice) {
+    if (typeof toolChoice === "object") {
+      if (toolChoice.type === "function" && "name" in toolChoice) {
         return {
-          type: 'function',
+          type: "function",
           function: { name: toolChoice.name },
         };
       }
 
-      if (toolChoice.type === 'tool' && 'name' in toolChoice) {
+      if (toolChoice.type === "tool" && "name" in toolChoice) {
         return {
-          type: 'function',
+          type: "function",
           function: { name: toolChoice.name },
         };
       }
 
-      if (toolChoice.type === 'function' && 'function' in toolChoice) {
+      if (toolChoice.type === "function" && "function" in toolChoice) {
         return {
-          type: 'function',
+          type: "function",
           function: { name: toolChoice.function.name },
         };
       }
@@ -331,17 +373,19 @@ export class ACP2OpenAI {
     return undefined;
   }
 
-  private convertResponsesInputToMessages(req: OpenAIResponsesRequest): ChatCompletionMessageParam[] {
+  private convertResponsesInputToMessages(
+    req: OpenAIResponsesRequest,
+  ): ChatCompletionMessageParam[] {
     const messages: ChatCompletionMessageParam[] = [];
 
     if (req.instructions) {
-      messages.push({ role: 'system', content: req.instructions });
+      messages.push({ role: "system", content: req.instructions });
     }
 
     const input = req.input;
 
-    if (typeof input === 'string') {
-      messages.push({ role: 'user', content: input });
+    if (typeof input === "string") {
+      messages.push({ role: "user", content: input });
       return messages;
     }
 
@@ -351,25 +395,30 @@ export class ACP2OpenAI {
       const role = item?.role;
       const content = this.stringifyResponsesInputContent(item?.content);
 
-      if (item?.type === 'function_call_output') {
+      if (item?.type === "function_call_output") {
         messages.push({
-          role: 'tool',
-          tool_call_id: item.call_id ?? item.tool_call_id ?? '',
+          role: "tool",
+          tool_call_id: item.call_id ?? item.tool_call_id ?? "",
           content,
         });
         continue;
       }
 
-      if (role === 'tool') {
+      if (role === "tool") {
         messages.push({
-          role: 'tool',
-          tool_call_id: item.call_id ?? item.tool_call_id ?? '',
+          role: "tool",
+          tool_call_id: item.call_id ?? item.tool_call_id ?? "",
           content,
         });
         continue;
       }
 
-      if (role === 'system' || role === 'developer' || role === 'assistant' || role === 'user') {
+      if (
+        role === "system" ||
+        role === "developer" ||
+        role === "assistant" ||
+        role === "user"
+      ) {
         messages.push({ role, content });
       }
     }
@@ -377,9 +426,11 @@ export class ACP2OpenAI {
     return messages;
   }
 
-  private toChatCompletionRequestFromResponses(req: OpenAIResponsesRequest): OpenAIChatCompletionRequest {
+  private toChatCompletionRequestFromResponses(
+    req: OpenAIResponsesRequest,
+  ): OpenAIChatCompletionRequest {
     return {
-      model: req.model || this.config.defaultModel || '',
+      model: req.model || this.config.defaultModel || "",
       messages: this.convertResponsesInputToMessages(req),
       tools: this.convertResponsesTools(req.tools),
       tool_choice: this.convertResponsesToolChoice(req.tool_choice),
@@ -396,18 +447,18 @@ export class ACP2OpenAI {
   private toResponsesOutput(
     messageContent: string | null,
     toolCalls: OpenAIToolCall[] | undefined,
-  ): OpenAIResponsesResponse['output'] {
-    const output: OpenAIResponsesResponse['output'] = [];
+  ): OpenAIResponsesResponse["output"] {
+    const output: OpenAIResponsesResponse["output"] = [];
 
     if (messageContent && messageContent.length > 0) {
       output.push({
-        type: 'message',
+        type: "message",
         id: `msg_${Math.random().toString(36).slice(2, 15)}`,
-        role: 'assistant',
-        status: 'completed',
+        role: "assistant",
+        status: "completed",
         content: [
           {
-            type: 'output_text',
+            type: "output_text",
             text: messageContent,
             annotations: [],
           },
@@ -417,29 +468,29 @@ export class ACP2OpenAI {
 
     if (toolCalls && toolCalls.length > 0) {
       for (const call of toolCalls) {
-        if (call.type !== 'function') continue;
+        if (call.type !== "function") continue;
 
         output.push({
-          type: 'function_call',
+          type: "function_call",
           id: call.id,
           call_id: call.id,
           name: call.function.name,
           arguments: call.function.arguments,
-          status: 'completed',
+          status: "completed",
         });
       }
     }
 
     if (output.length === 0) {
       output.push({
-        type: 'message',
+        type: "message",
         id: `msg_${Math.random().toString(36).slice(2, 15)}`,
-        role: 'assistant',
-        status: 'completed',
+        role: "assistant",
+        status: "completed",
         content: [
           {
-            type: 'output_text',
-            text: '',
+            type: "output_text",
+            text: "",
             annotations: [],
           },
         ],
@@ -459,9 +510,9 @@ export class ACP2OpenAI {
 
     return {
       id,
-      object: 'response',
+      object: "response",
       created_at: chatResponse.created,
-      status: 'completed',
+      status: "completed",
       model: chatResponse.model,
       output: this.toResponsesOutput(
         message?.content ?? null,
@@ -476,9 +527,9 @@ export class ACP2OpenAI {
   }
 
   private parseSSEDataChunk(chunk: string): OpenAIStreamChunk | null {
-    if (!chunk.startsWith('data: ')) return null;
-    const payload = chunk.slice('data: '.length).trim();
-    if (!payload || payload === '[DONE]') return null;
+    if (!chunk.startsWith("data: ")) return null;
+    const payload = chunk.slice("data: ".length).trim();
+    if (!payload || payload === "[DONE]") return null;
 
     try {
       return JSON.parse(payload) as OpenAIStreamChunk;
@@ -489,21 +540,23 @@ export class ACP2OpenAI {
 
   private mergeStreamToolCalls(
     existing: OpenAIToolCall[],
-    incoming: NonNullable<OpenAIStreamChunk['choices']>[number]['delta']['tool_calls'],
+    incoming: NonNullable<
+      OpenAIStreamChunk["choices"]
+    >[number]["delta"]["tool_calls"],
   ): OpenAIToolCall[] {
     if (!incoming || incoming.length === 0) return existing;
 
     const map = new Map(existing.map((call) => [call.id, call]));
 
     for (const item of incoming) {
-      if (!item.id || item.type !== 'function' || !item.function) continue;
+      if (!item.id || item.type !== "function" || !item.function) continue;
 
       map.set(item.id, {
         id: item.id,
-        type: 'function',
+        type: "function",
         function: {
-          name: item.function.name ?? '',
-          arguments: item.function.arguments ?? '{}',
+          name: item.function.name ?? "",
+          arguments: item.function.arguments ?? "{}",
         },
       });
     }
@@ -523,26 +576,30 @@ export class ACP2OpenAI {
   }
 
   private isChatCompletionsRequest(path: string, method: string): boolean {
-    return path === CHAT_COMPLETIONS_PATH && method === 'POST';
+    return path === CHAT_COMPLETIONS_PATH && method === "POST";
   }
 
   private isResponsesRequest(path: string, method: string): boolean {
-    return path === RESPONSES_PATH && method === 'POST';
+    return path === RESPONSES_PATH && method === "POST";
   }
 
   private isModelsListRequest(path: string, method: string): boolean {
-    return path === MODELS_PATH && method === 'GET';
+    return path === MODELS_PATH && method === "GET";
   }
 
   private isSupportedRequest(path: string, method: string): boolean {
-    return this.isChatCompletionsRequest(path, method)
-      || this.isResponsesRequest(path, method)
-      || this.isModelsListRequest(path, method);
+    return (
+      this.isChatCompletionsRequest(path, method) ||
+      this.isResponsesRequest(path, method) ||
+      this.isModelsListRequest(path, method)
+    );
   }
 
   private async handleModelsList(): Promise<OpenAIModelListResponse> {
     if (!this.config.defaultACPConfig) {
-      throw new Error('defaultACPConfig is required for GET /v1/models (needs ACP initSession)');
+      throw new Error(
+        "defaultACPConfig is required for GET /v1/models (needs ACP initSession)",
+      );
     }
 
     const provider = createACPProvider(this.config.defaultACPConfig);
@@ -558,18 +615,18 @@ export class ACP2OpenAI {
         ...availableModelIds,
         sessionInfo.models?.currentModelId,
         this.config.defaultModel,
-        'default',
+        "default",
       ].filter((m): m is string => Boolean(m));
 
       const modelIds = Array.from(new Set(modelCandidates));
 
       return {
-        object: 'list',
+        object: "list",
         data: modelIds.map((id) => ({
           id,
-          object: 'model',
+          object: "model",
           created,
-          owned_by: 'acp2openai',
+          owned_by: "acp2openai",
         })),
       };
     } finally {
@@ -577,7 +634,9 @@ export class ACP2OpenAI {
     }
   }
 
-  private createSSEReadableStream(stream: AsyncIterable<string>): ReadableStream<Uint8Array> {
+  private createSSEReadableStream(
+    stream: AsyncIterable<string>,
+  ): ReadableStream<Uint8Array> {
     return new ReadableStream({
       async start(controller) {
         try {
@@ -593,12 +652,12 @@ export class ACP2OpenAI {
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
   private parseArgsObject(value: unknown): Record<string, unknown> {
     if (this.isRecord(value)) return value;
-    if (typeof value !== 'string') return {};
+    if (typeof value !== "string") return {};
 
     try {
       const parsed = JSON.parse(value);
@@ -616,24 +675,26 @@ export class ACP2OpenAI {
     wrapperName: string,
     payload: Record<string, unknown>,
     fallbackToolCallId: string,
-  ): { toolCallId: string; toolName: string; input: Record<string, unknown> } | undefined {
+  ):
+    | { toolCallId: string; toolName: string; input: Record<string, unknown> }
+    | undefined {
     if (!this.isACPWrappedToolName(wrapperName)) return undefined;
 
     const nestedToolName =
-      (typeof payload.toolName === 'string' && payload.toolName) ||
-      (typeof payload.name === 'string' && payload.name) ||
-      '';
+      (typeof payload.toolName === "string" && payload.toolName) ||
+      (typeof payload.name === "string" && payload.name) ||
+      "";
 
     if (!nestedToolName) return undefined;
 
     const nestedArgs = this.isRecord(payload.args)
       ? payload.args
       : this.isRecord(payload.arguments)
-      ? payload.arguments
-      : {};
+        ? payload.arguments
+        : {};
 
     const nestedToolCallId =
-      typeof payload.toolCallId === 'string' && payload.toolCallId
+      typeof payload.toolCallId === "string" && payload.toolCallId
         ? payload.toolCallId
         : fallbackToolCallId;
 
@@ -646,18 +707,22 @@ export class ACP2OpenAI {
 
   private normalizeToolCall(tc: any): any | undefined {
     const fallbackToolCallId =
-      typeof tc?.toolCallId === 'string' && tc.toolCallId
+      typeof tc?.toolCallId === "string" && tc.toolCallId
         ? tc.toolCallId
         : `call_${Math.random().toString(36).slice(2, 10)}`;
 
-    const rawToolName = typeof tc?.toolName === 'string' ? tc.toolName : '';
+    const rawToolName = typeof tc?.toolName === "string" ? tc.toolName : "";
     const rawInput = this.isRecord(tc?.input)
       ? tc.input
       : this.isRecord(tc?.args)
-      ? tc.args
-      : {};
+        ? tc.args
+        : {};
 
-    const unwrapped = this.unwrapACPToolCall(rawToolName, rawInput, fallbackToolCallId);
+    const unwrapped = this.unwrapACPToolCall(
+      rawToolName,
+      rawInput,
+      fallbackToolCallId,
+    );
     if (unwrapped) {
       return {
         ...tc,
@@ -676,14 +741,14 @@ export class ACP2OpenAI {
   }
 
   private stringifyContent(content: any): string {
-    if (typeof content === 'string') return content;
+    if (typeof content === "string") return content;
     if (Array.isArray(content)) {
       return content
-        .filter((part: any) => part.type === 'text')
+        .filter((part: any) => part.type === "text")
         .map((part: any) => part.text)
-        .join('\n');
+        .join("\n");
     }
-    return '';
+    return "";
   }
 
   /**
@@ -693,33 +758,38 @@ export class ACP2OpenAI {
   private toImageFileParts(content: any): any[] {
     if (!Array.isArray(content)) return [];
     return content
-      .filter((part: any) => part.type === 'image_url' && part.image_url?.url)
+      .filter((part: any) => part.type === "image_url" && part.image_url?.url)
       .map((part: any) => {
         const url: string = part.image_url.url;
-        if (url.startsWith('data:')) {
-          const [meta, data] = url.split(',');
-          const mediaType = meta.replace('data:', '').replace(';base64', '');
-          return { type: 'file' as const, mediaType, data };
+        if (url.startsWith("data:")) {
+          const [meta, data] = url.split(",");
+          const mediaType = meta.replace("data:", "").replace(";base64", "");
+          return { type: "file" as const, mediaType, data };
         }
-        return { type: 'file' as const, mediaType: 'image/jpeg', data: url };
+        return { type: "file" as const, mediaType: "image/jpeg", data: url };
       });
   }
 
-  private normalizeRole(role: ChatCompletionMessageParam['role']): 'system' | 'user' | 'assistant' {
-    if (role === 'system' || role === 'developer') return 'system';
-    if (role === 'user') return 'user';
-    return 'assistant';
+  private normalizeRole(
+    role: ChatCompletionMessageParam["role"],
+  ): "system" | "user" | "assistant" {
+    if (role === "system" || role === "developer") return "system";
+    if (role === "user") return "user";
+    return "assistant";
   }
 
   private convertToolResultMessage(msg: any): ModelMessage {
-    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : JSON.stringify(msg.content);
     return {
-      role: 'tool',
+      role: "tool",
       content: [
         {
-          type: 'tool-result',
+          type: "tool-result",
           toolCallId: msg.tool_call_id,
-          toolName: 'tool',
+          toolName: "tool",
           output: content,
         },
       ],
@@ -727,18 +797,18 @@ export class ACP2OpenAI {
   }
 
   private convertAssistantToolCallMessage(msg: any): ModelMessage {
-    const textContent = typeof msg.content === 'string' ? msg.content : '';
+    const textContent = typeof msg.content === "string" ? msg.content : "";
 
     return {
-      role: 'assistant',
+      role: "assistant",
       content: [
-        ...(textContent ? [{ type: 'text' as const, text: textContent }] : []),
+        ...(textContent ? [{ type: "text" as const, text: textContent }] : []),
         ...msg.tool_calls
-          .filter((tc: any) => tc.type === 'function')
+          .filter((tc: any) => tc.type === "function")
           .map((tc: any) => {
             const parsedArgs = this.parseArgsObject(tc.function.arguments);
             const fallbackToolCallId =
-              typeof tc.id === 'string' && tc.id
+              typeof tc.id === "string" && tc.id
                 ? tc.id
                 : `call_${Math.random().toString(36).slice(2, 10)}`;
             const unwrapped = this.unwrapACPToolCall(
@@ -748,7 +818,7 @@ export class ACP2OpenAI {
             );
 
             return {
-              type: 'tool-call' as const,
+              type: "tool-call" as const,
               toolCallId: unwrapped?.toolCallId ?? fallbackToolCallId,
               toolName: unwrapped?.toolName ?? tc.function.name,
               args: unwrapped?.input ?? parsedArgs,
@@ -761,24 +831,27 @@ export class ACP2OpenAI {
   /**
    * Convert OpenAI messages to AI SDK ModelMessage format
    */
-  private convertMessages(messages: ChatCompletionMessageParam[]): ModelMessage[] {
+  private convertMessages(
+    messages: ChatCompletionMessageParam[],
+  ): ModelMessage[] {
     return messages.map((msg) => {
-      if (msg.role === 'tool') {
+      if (msg.role === "tool") {
         return this.convertToolResultMessage(msg);
       }
 
-      if (msg.role === 'assistant' && msg.tool_calls) {
+      if (msg.role === "assistant" && msg.tool_calls) {
         return this.convertAssistantToolCallMessage(msg);
       }
 
       const textContent = this.stringifyContent(msg.content);
-      const imageParts = msg.role === 'user' ? this.toImageFileParts(msg.content) : [];
+      const imageParts =
+        msg.role === "user" ? this.toImageFileParts(msg.content) : [];
 
       if (imageParts.length > 0) {
         const parts: any[] = [];
-        if (textContent) parts.push({ type: 'text', text: textContent });
+        if (textContent) parts.push({ type: "text", text: textContent });
         parts.push(...imageParts);
-        return { role: 'user', content: parts };
+        return { role: "user", content: parts };
       }
 
       return {
@@ -791,13 +864,15 @@ export class ACP2OpenAI {
   /**
    * Convert OpenAI tools to AI SDK tools format
    */
-  private convertTools(openaiTools?: OpenAITool[]): Record<string, any> | undefined {
+  private convertTools(
+    openaiTools?: OpenAITool[],
+  ): Record<string, any> | undefined {
     if (!openaiTools || openaiTools.length === 0) return undefined;
 
     const tools: Record<string, any> = {};
 
     for (const openaiTool of openaiTools) {
-      if (openaiTool.type !== 'function') continue;
+      if (openaiTool.type !== "function") continue;
 
       const fn = openaiTool.function;
       const zodSchema = z.object({}).passthrough();
@@ -814,20 +889,42 @@ export class ACP2OpenAI {
   }
 
   /**
-   * Convert OpenAI tool_choice to AI SDK toolChoice format
+   * Convert OpenAI tool_choice to AI SDK toolChoice format.
+   *
+   * ACP currently honors object-form forced tool choice reliably, but string-form
+   * `required` may be ignored by downstream providers. When OpenAI sends
+   * `tool_choice: "required"` with exactly one available tool, we can preserve
+   * the expected behavior by converting it to an explicit forced tool choice.
    */
   private convertToolChoice(
-    toolChoice?: ChatCompletionToolChoiceOption
-  ): 'auto' | 'none' | 'required' | { type: 'tool'; toolName: string } | undefined {
+    toolChoice?: ChatCompletionToolChoiceOption,
+    openaiTools?: OpenAITool[],
+  ):
+    | "auto"
+    | "none"
+    | "required"
+    | { type: "tool"; toolName: string }
+    | undefined {
     if (!toolChoice) return undefined;
 
-    if (toolChoice === 'none' || toolChoice === 'auto' || toolChoice === 'required') {
+    if (toolChoice === "required") {
+      const onlyAllowedToolName = this.getOnlyAllowedToolName(openaiTools);
+      if (onlyAllowedToolName) {
+        return {
+          type: "tool",
+          toolName: onlyAllowedToolName,
+        };
+      }
       return toolChoice;
     }
 
-    if (typeof toolChoice === 'object' && toolChoice.type === 'function') {
+    if (toolChoice === "none" || toolChoice === "auto") {
+      return toolChoice;
+    }
+
+    if (typeof toolChoice === "object" && toolChoice.type === "function") {
       return {
-        type: 'tool',
+        type: "tool",
         toolName: toolChoice.function.name,
       };
     }
@@ -840,14 +937,27 @@ export class ACP2OpenAI {
 
     return new Set(
       openaiTools
-        .filter((t) => t.type === 'function')
+        .filter((t) => t.type === "function")
         .map((t) => t.function.name),
     );
   }
 
-  private getForcedToolName(toolChoice?: ChatCompletionToolChoiceOption): string | undefined {
-    if (!toolChoice || typeof toolChoice !== 'object') return undefined;
-    if (toolChoice.type !== 'function') return undefined;
+  private getOnlyAllowedToolName(
+    openaiTools?: OpenAITool[],
+  ): string | undefined {
+    const allowedToolNames = Array.from(this.getAllowedToolNames(openaiTools));
+    return allowedToolNames.length === 1 ? allowedToolNames[0] : undefined;
+  }
+
+  private getForcedToolName(
+    toolChoice?: ChatCompletionToolChoiceOption,
+    openaiTools?: OpenAITool[],
+  ): string | undefined {
+    if (toolChoice === "required") {
+      return this.getOnlyAllowedToolName(openaiTools);
+    }
+    if (!toolChoice || typeof toolChoice !== "object") return undefined;
+    if (toolChoice.type !== "function") return undefined;
     return toolChoice.function.name;
   }
 
@@ -862,10 +972,15 @@ export class ACP2OpenAI {
       .filter((tc): tc is any => Boolean(tc));
 
     const filtered = normalized.filter((tc) => {
-      const name = String(tc?.toolName ?? '');
+      const name = String(tc?.toolName ?? "");
       if (!name) return false;
-      if (runtime.allowedToolNames.size > 0 && !runtime.allowedToolNames.has(name)) return false;
-      if (runtime.forcedToolName && name !== runtime.forcedToolName) return false;
+      if (
+        runtime.allowedToolNames.size > 0 &&
+        !runtime.allowedToolNames.has(name)
+      )
+        return false;
+      if (runtime.forcedToolName && name !== runtime.forcedToolName)
+        return false;
       return true;
     });
 
@@ -882,17 +997,22 @@ export class ACP2OpenAI {
     const first = this.normalizeToolCall(rawToolCalls[0]);
     if (!first) return undefined;
 
-    return [{
-      ...first,
-      toolName: runtime.forcedToolName,
-    }];
+    return [
+      {
+        ...first,
+        toolName: runtime.forcedToolName,
+      },
+    ];
   }
 
   private pickToolCalls(
     rawToolCalls: any[] | undefined,
     runtime: RuntimeContext,
   ): any[] | undefined {
-    return this.sanitizeToolCalls(rawToolCalls, runtime) ?? this.coerceForcedToolCall(rawToolCalls, runtime);
+    return (
+      this.sanitizeToolCalls(rawToolCalls, runtime) ??
+      this.coerceForcedToolCall(rawToolCalls, runtime)
+    );
   }
 
   private resolveNonStreamFinishReason(
@@ -900,8 +1020,8 @@ export class ACP2OpenAI {
     toolCalls: OpenAIToolCall[] | undefined,
   ): OpenAIFinishReason {
     const mapped = this.mapFinishReason(finishReason);
-    if (mapped === 'tool_calls' && (!toolCalls || toolCalls.length === 0)) {
-      return 'stop';
+    if (mapped === "tool_calls" && (!toolCalls || toolCalls.length === 0)) {
+      return "stop";
     }
     return mapped;
   }
@@ -911,27 +1031,33 @@ export class ACP2OpenAI {
     toolCalls: any[] | undefined,
   ): OpenAIFinishReason | null {
     const mapped = this.mapStreamFinishReason(finishReason);
-    if (mapped === 'tool_calls' && (!toolCalls || toolCalls.length === 0)) {
-      return 'stop';
+    if (mapped === "tool_calls" && (!toolCalls || toolCalls.length === 0)) {
+      return "stop";
     }
     return mapped;
   }
 
-  private mapFinishReason(finishReason: string | undefined): OpenAIFinishReason {
-    if (finishReason === 'tool-calls') return 'tool_calls';
-    if (finishReason === 'stop') return 'stop';
-    if (finishReason === 'length') return 'length';
-    return 'stop';
+  private mapFinishReason(
+    finishReason: string | undefined,
+  ): OpenAIFinishReason {
+    if (finishReason === "tool-calls") return "tool_calls";
+    if (finishReason === "stop") return "stop";
+    if (finishReason === "length") return "length";
+    return "stop";
   }
 
-  private mapStreamFinishReason(finishReason: string | undefined): OpenAIFinishReason | null {
-    if (finishReason === 'tool-calls') return 'tool_calls';
-    if (finishReason === 'stop') return 'stop';
-    if (finishReason === 'length') return 'length';
+  private mapStreamFinishReason(
+    finishReason: string | undefined,
+  ): OpenAIFinishReason | null {
+    if (finishReason === "tool-calls") return "tool_calls";
+    if (finishReason === "stop") return "stop";
+    if (finishReason === "length") return "length";
     return null;
   }
 
-  private toOpenAIToolCalls(toolCalls: any[] | undefined): OpenAIToolCall[] | undefined {
+  private toOpenAIToolCalls(
+    toolCalls: any[] | undefined,
+  ): OpenAIToolCall[] | undefined {
     if (!toolCalls || toolCalls.length === 0) return undefined;
 
     const normalized = toolCalls
@@ -942,7 +1068,7 @@ export class ACP2OpenAI {
 
     return normalized.map((tc) => ({
       id: tc.toolCallId,
-      type: 'function' as const,
+      type: "function" as const,
       function: {
         name: tc.toolName,
         arguments: JSON.stringify(tc.input),
@@ -954,7 +1080,7 @@ export class ACP2OpenAI {
    * Handle non-streaming chat completion
    */
   async handleChatCompletion(
-    req: OpenAIChatCompletionRequest
+    req: OpenAIChatCompletionRequest,
   ): Promise<OpenAIChatCompletionResponse> {
     const runtime = this.buildRuntime(req);
 
@@ -974,19 +1100,22 @@ export class ACP2OpenAI {
 
     return {
       id,
-      object: 'chat.completion',
+      object: "chat.completion",
       created,
       model: runtime.modelName,
       choices: [
         {
           index: 0,
           message: {
-            role: 'assistant',
+            role: "assistant",
             content: result.text || null,
             refusal: null,
             tool_calls: openAIToolCalls,
           },
-          finish_reason: this.resolveNonStreamFinishReason(result.finishReason, openAIToolCalls),
+          finish_reason: this.resolveNonStreamFinishReason(
+            result.finishReason,
+            openAIToolCalls,
+          ),
           logprobs: null,
         },
       ],
@@ -1004,7 +1133,7 @@ export class ACP2OpenAI {
    * Returns an async iterable of SSE-formatted strings
    */
   async *handleChatCompletionStream(
-    req: OpenAIChatCompletionRequest
+    req: OpenAIChatCompletionRequest,
   ): AsyncIterable<string> {
     const runtime = this.buildRuntime(req);
 
@@ -1024,14 +1153,14 @@ export class ACP2OpenAI {
     for await (const chunk of result.textStream) {
       const streamChunk: OpenAIStreamChunk = {
         id,
-        object: 'chat.completion.chunk',
+        object: "chat.completion.chunk",
         created,
         model: runtime.modelName,
         choices: [
           {
             index: 0,
             delta: isFirst
-              ? { role: 'assistant', content: chunk }
+              ? { role: "assistant", content: chunk }
               : { content: chunk },
             finish_reason: null,
           },
@@ -1051,7 +1180,7 @@ export class ACP2OpenAI {
         const tc = selectedToolCalls[i];
         const toolCallChunk: OpenAIStreamChunk = {
           id,
-          object: 'chat.completion.chunk',
+          object: "chat.completion.chunk",
           created,
           model: runtime.modelName,
           choices: [
@@ -1062,7 +1191,7 @@ export class ACP2OpenAI {
                   {
                     index: i,
                     id: tc.toolCallId,
-                    type: 'function',
+                    type: "function",
                     function: {
                       name: tc.toolName,
                       arguments: JSON.stringify(tc.input ?? {}),
@@ -1080,48 +1209,58 @@ export class ACP2OpenAI {
 
     const finalChunk: OpenAIStreamChunk = {
       id,
-      object: 'chat.completion.chunk',
+      object: "chat.completion.chunk",
       created,
       model: runtime.modelName,
       choices: [
         {
           index: 0,
           delta: {},
-          finish_reason: this.resolveStreamFinishReason(finishReasonValue, selectedToolCalls),
+          finish_reason: this.resolveStreamFinishReason(
+            finishReasonValue,
+            selectedToolCalls,
+          ),
         },
       ],
     };
 
     yield `data: ${JSON.stringify(finalChunk)}\n\n`;
-    yield 'data: [DONE]\n\n';
+    yield "data: [DONE]\n\n";
   }
 
-  async handleResponses(req: OpenAIResponsesRequest): Promise<OpenAIResponsesResponse> {
+  async handleResponses(
+    req: OpenAIResponsesRequest,
+  ): Promise<OpenAIResponsesResponse> {
     const chatReq = this.toChatCompletionRequestFromResponses(req);
     const chatResponse = await this.handleChatCompletion(chatReq);
     return this.mapChatToResponses(chatResponse);
   }
 
-  async *handleResponsesStream(req: OpenAIResponsesRequest): AsyncIterable<string> {
-    const chatReq = this.toChatCompletionRequestFromResponses({ ...req, stream: true });
+  async *handleResponsesStream(
+    req: OpenAIResponsesRequest,
+  ): AsyncIterable<string> {
+    const chatReq = this.toChatCompletionRequestFromResponses({
+      ...req,
+      stream: true,
+    });
     const responseId = `resp_${Math.random().toString(36).slice(2, 15)}`;
     const createdAt = Math.floor(Date.now() / 1000);
-    const modelName = chatReq.model || 'default';
+    const modelName = chatReq.model || "default";
     const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
 
     yield `event: response.created\ndata: ${JSON.stringify({
-      type: 'response.created',
+      type: "response.created",
       response: {
         id: responseId,
-        object: 'response',
+        object: "response",
         created_at: createdAt,
-        status: 'in_progress',
+        status: "in_progress",
         model: modelName,
         output: [],
       },
     })}\n\n`;
 
-    let fullText = '';
+    let fullText = "";
     let toolCalls: OpenAIToolCall[] = [];
 
     for await (const chunk of this.handleChatCompletionStream(chatReq)) {
@@ -1131,10 +1270,10 @@ export class ACP2OpenAI {
       const choice = parsed.choices?.[0];
       const delta = choice?.delta;
 
-      if (typeof delta?.content === 'string' && delta.content.length > 0) {
+      if (typeof delta?.content === "string" && delta.content.length > 0) {
         fullText += delta.content;
         yield `event: response.output_text.delta\ndata: ${JSON.stringify({
-          type: 'response.output_text.delta',
+          type: "response.output_text.delta",
           response_id: responseId,
           item_id: messageId,
           output_index: 0,
@@ -1150,19 +1289,19 @@ export class ACP2OpenAI {
 
     const finalChatResponse: OpenAIChatCompletionResponse = {
       id: `chatcmpl-${Math.random().toString(36).slice(2, 15)}`,
-      object: 'chat.completion',
+      object: "chat.completion",
       created: createdAt,
       model: modelName,
       choices: [
         {
           index: 0,
           message: {
-            role: 'assistant',
+            role: "assistant",
             content: fullText || null,
             refusal: null,
             tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
           },
-          finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+          finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
           logprobs: null,
         },
       ],
@@ -1174,13 +1313,16 @@ export class ACP2OpenAI {
       service_tier: null,
     };
 
-    const finalResponse = this.mapChatToResponses(finalChatResponse, responseId);
+    const finalResponse = this.mapChatToResponses(
+      finalChatResponse,
+      responseId,
+    );
 
     yield `event: response.completed\ndata: ${JSON.stringify({
-      type: 'response.completed',
+      type: "response.completed",
       response: finalResponse,
     })}\n\n`;
-    yield 'data: [DONE]\n\n';
+    yield "data: [DONE]\n\n";
   }
 
   /**
@@ -1191,42 +1333,48 @@ export class ACP2OpenAI {
     const url = new URL(request.url);
 
     if (!this.isSupportedRequest(url.pathname, request.method)) {
-      return new Response('Not Found', { status: 404 });
+      return new Response("Not Found", { status: 404 });
     }
 
     if (this.isModelsListRequest(url.pathname, request.method)) {
       const response = await this.handleModelsList();
       return new Response(JSON.stringify(response), {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       });
     }
 
     if (this.isResponsesRequest(url.pathname, request.method)) {
-      const body = await request.json() as OpenAIResponsesRequest;
+      const body = (await request.json()) as OpenAIResponsesRequest;
 
       if (body.stream) {
-        return new Response(this.createSSEReadableStream(this.handleResponsesStream(body)), {
-          headers: SSE_HEADERS,
-        });
+        return new Response(
+          this.createSSEReadableStream(this.handleResponsesStream(body)),
+          {
+            headers: SSE_HEADERS,
+          },
+        );
       }
 
       const response = await this.handleResponses(body);
       return new Response(JSON.stringify(response), {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    const body = await request.json() as OpenAIChatCompletionRequest;
+    const body = (await request.json()) as OpenAIChatCompletionRequest;
 
     if (body.stream) {
-      return new Response(this.createSSEReadableStream(this.handleChatCompletionStream(body)), {
-        headers: SSE_HEADERS,
-      });
+      return new Response(
+        this.createSSEReadableStream(this.handleChatCompletionStream(body)),
+        {
+          headers: SSE_HEADERS,
+        },
+      );
     }
 
     const response = await this.handleChatCompletion(body);
     return new Response(JSON.stringify(response), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
   }
 
@@ -1236,7 +1384,7 @@ export class ACP2OpenAI {
   expressHandler() {
     return async (req: any, res: any) => {
       if (!this.isSupportedRequest(req.path, req.method)) {
-        res.status(404).json({ error: 'Not Found' });
+        res.status(404).json({ error: "Not Found" });
         return;
       }
 
@@ -1251,20 +1399,26 @@ export class ACP2OpenAI {
       }
 
       const isResponses = this.isResponsesRequest(req.path, req.method);
-      const body = req.body as OpenAIChatCompletionRequest | OpenAIResponsesRequest;
+      const body = req.body as
+        | OpenAIChatCompletionRequest
+        | OpenAIResponsesRequest;
 
       if (body.stream) {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
 
         try {
           if (isResponses) {
-            for await (const chunk of this.handleResponsesStream(body as OpenAIResponsesRequest)) {
+            for await (const chunk of this.handleResponsesStream(
+              body as OpenAIResponsesRequest,
+            )) {
               res.write(chunk);
             }
           } else {
-            for await (const chunk of this.handleChatCompletionStream(body as OpenAIChatCompletionRequest)) {
+            for await (const chunk of this.handleChatCompletionStream(
+              body as OpenAIChatCompletionRequest,
+            )) {
               res.write(chunk);
             }
           }
@@ -1278,7 +1432,9 @@ export class ACP2OpenAI {
       try {
         const response = isResponses
           ? await this.handleResponses(body as OpenAIResponsesRequest)
-          : await this.handleChatCompletion(body as OpenAIChatCompletionRequest);
+          : await this.handleChatCompletion(
+              body as OpenAIChatCompletionRequest,
+            );
         res.json(response);
       } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -1292,7 +1448,7 @@ export class ACP2OpenAI {
   honoHandler() {
     return async (c: any) => {
       if (!this.isSupportedRequest(c.req.path, c.req.method)) {
-        return c.json({ error: 'Not Found' }, 404);
+        return c.json({ error: "Not Found" }, 404);
       }
 
       if (this.isModelsListRequest(c.req.path, c.req.method)) {
@@ -1300,14 +1456,18 @@ export class ACP2OpenAI {
       }
 
       const isResponses = this.isResponsesRequest(c.req.path, c.req.method);
-      const body = await c.req.json() as OpenAIChatCompletionRequest | OpenAIResponsesRequest;
+      const body = (await c.req.json()) as
+        | OpenAIChatCompletionRequest
+        | OpenAIResponsesRequest;
 
       if (body.stream) {
         return c.newResponse(
           this.createSSEReadableStream(
             isResponses
               ? this.handleResponsesStream(body as OpenAIResponsesRequest)
-              : this.handleChatCompletionStream(body as OpenAIChatCompletionRequest),
+              : this.handleChatCompletionStream(
+                  body as OpenAIChatCompletionRequest,
+                ),
           ),
           {
             headers: SSE_HEADERS,
