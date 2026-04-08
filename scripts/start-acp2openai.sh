@@ -6,7 +6,7 @@ RUNTIME_DIR="$ROOT_DIR/.droidrun-local/runtime"
 PID_FILE="$RUNTIME_DIR/acp2openai.pid"
 LOG_FILE="$RUNTIME_DIR/acp2openai.log"
 HEALTH_URL="${ACP2OPENAI_HEALTH_URL:-http://127.0.0.1:3456/health}"
-CONFIG_FILE="$ROOT_DIR/acp2openai.config.json"
+CONFIG_FILE="$ROOT_DIR/examples/hono-server/acp2openai.config.json"
 
 mkdir -p "$RUNTIME_DIR"
 
@@ -29,8 +29,8 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required but was not found in PATH" >&2
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is required but was not found in PATH" >&2
   exit 1
 fi
 
@@ -38,7 +38,7 @@ if [[ ! -f "$PID_FILE" ]]; then
   (
     cd "$ROOT_DIR"
     export ACP2OPENAI_CONFIG="$CONFIG_FILE"
-    nohup npm run example:hono >"$LOG_FILE" 2>&1 &
+    nohup pnpm run example:hono >"$LOG_FILE" 2>&1 &
     echo $! >"$PID_FILE"
   )
   echo "starting acp2openai..."

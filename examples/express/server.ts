@@ -33,4 +33,5 @@ app.listen(port, () => {
   console.log(`📡 OpenAI-compatible endpoint(models): http://localhost:${port}/v1/models`);
   console.log(`📡 OpenAI-compatible endpoint(chat): http://localhost:${port}/v1/chat/completions`);
   console.log(`📡 OpenAI-compatible endpoint(responses): http://localhost:${port}/v1/responses`);
+  console.log(`📡 Anthropic-compatible endpoint(messages): http://localhost:${port}/v1/messages`);
 });

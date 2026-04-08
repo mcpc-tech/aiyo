@@ -1,6 +1,6 @@
 # Express Example: Minimal Start
 
-This example exposes an ACP runtime as an OpenAI-compatible HTTP server.
+This example exposes an ACP runtime as an OpenAI- and Anthropic-compatible HTTP server.
 
 ## Requirements
 
@@ -12,8 +12,8 @@ This example exposes an ACP runtime as an OpenAI-compatible HTTP server.
 Run from the repo root:
 
 ```bash
-npm install
-npm run example:express
+pnpm install
+pnpm run example:express
 ```
 
 Server endpoints:

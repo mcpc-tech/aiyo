@@ -1,8 +1,8 @@
 # @yaonyan/acp2openai-compatible
 
-OpenAI-compatible HTTP adapter for ACP (Agent Client Protocol) providers, built on top of the AI SDK.
+OpenAI- and Anthropic-compatible HTTP adapter for ACP (Agent Client Protocol) providers, built on top of the AI SDK.
 
-This package lets you expose an ACP-backed agent or model through familiar OpenAI-style endpoints, so existing OpenAI SDK clients and tools can talk to it with minimal changes.
+This package lets you expose an ACP-backed agent or model through familiar OpenAI- or Anthropic-style endpoints, so existing SDK clients and tools can talk to it with minimal changes.
 
 ## What it supports
 
@@ -56,6 +56,7 @@ const app = new Hono();
 app.get("/v1/models", adapter.honoHandler());
 app.post("/v1/chat/completions", adapter.honoHandler());
 app.post("/v1/responses", adapter.honoHandler());
+app.post("/v1/messages", adapter.honoHandler());
 ```
 
 ### Request-level ACP config via `extra_body`
@@ -107,11 +108,24 @@ This repo includes two runnable example servers:
 From the repo root:
 
 ```bash
-npm run example:hono
-npm run example:express
+pnpm run example:hono
+pnpm run example:express
 ```
 
 For the shortest Hono startup guide, see `examples/hono-server/README.md`.
+
+## CLI launcher
+
+This repo now includes a small workspace CLI in `packages/cli`.
+
+From the repo root:
+
+```bash
+pnpm install
+pnpm run launch opencode
+```
+
+The launcher starts a local OpenAI-compatible proxy backed by your ACP runtime, rewrites the local `opencode` provider config, and then opens `opencode` against that proxy.
 
 ### Local config file for the Hono example
 
@@ -137,7 +151,7 @@ You can point the example server at a different config file with:
 export ACP2OPENAI_CONFIG=/path/to/config.json
 ```
 
-The root `acp2openai.config.json` is intended to be a local development file and is gitignored.
+The example Hono server uses `examples/hono-server/acp2openai.config.json` by default. You can still override it with `ACP2OPENAI_CONFIG` when needed.
 
 ## API surface
 
@@ -149,6 +163,48 @@ Creates an `ACP2OpenAI` adapter instance.
 
 - `defaultACPConfig?: ACPProviderSettings`
 - `defaultModel?: string`
+- `middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[]`
+
+### `middleware`
+
+Use `middleware` when you want to rewrite the normalized OpenAI request or the final AI SDK call params before `generateText` / `streamText` runs.
+
+The middleware receives a mutable context with:
+
+- `phase`: `"request"`, `"params"`, or `"result"`
+- `endpoint`: `"chat.completions"`, `"responses"`, or `"messages"`
+- `callType`: `"generateText"` or `"streamText"`
+- `request`: the normalized chat-completions request
+- `params`: the final AI SDK call params in the `"params"` / `"result"` phases
+- `result`: the mutable stream result in the `"result"` phase
+
+```ts
+const adapter = createACP2OpenAI({
+  defaultModel: "default",
+  defaultACPConfig,
+  middleware: (ctx) => {
+    if (ctx.phase === "request") {
+      ctx.request.temperature ??= 0.2;
+      ctx.request.messages = [
+        { role: "system", content: "Always be concise." },
+        ...ctx.request.messages,
+      ];
+    }
+
+    if (ctx.phase === "params" && ctx.callType === "streamText") {
+      ctx.params!.topK = 20;
+    }
+
+    if (ctx.phase === "result" && ctx.result?.eventType === "text-delta") {
+      ctx.result.textDelta = `[patched] ${ctx.result.textDelta ?? ""}`;
+    }
+  },
+});
+```
+
+Use the `request` phase when you want to change OpenAI-facing fields such as `model`, `messages`, `tools`, `tool_choice`, `temperature`, or `extra_body`.
+Use the `params` phase when you want to directly override the final params sent to `generateText` / `streamText`.
+Use the `result` phase when you want to rewrite `streamText` output, including per-chunk text deltas, streamed tool calls, or the final finish reason.
 
 ### `adapter.handleRequest(request)`
 
@@ -221,11 +277,11 @@ ACP-specific and AI SDK-specific extras are passed through `extra_body`.
 
 ## How it works
 
-1. Receives an OpenAI-compatible HTTP request.
-2. Resolves ACP runtime config from `extra_body.acpConfig` or `defaultACPConfig`.
-3. Creates an ACP provider via `@mcpc-tech/acp-ai-provider`.
+1. Receives an OpenAI- or Anthropic-compatible HTTP request.
+2. Normalizes that request into the adapter's shared chat shape.
+3. Resolves an execution runtime from `runtimeFactory`, or falls back to ACP config from `extra_body.acpConfig` / `defaultACPConfig`.
 4. Uses the AI SDK to run generation or streaming.
-5. Maps the result back into OpenAI-compatible response shapes.
+5. Maps the result back into OpenAI- or Anthropic-compatible response shapes.
 
 ## Testing
 

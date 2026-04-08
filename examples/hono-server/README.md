@@ -6,7 +6,7 @@ This example exposes an ACP command as an OpenAI-compatible HTTP server.
 
 - Node.js `>= 18`
 - `codebuddy --acp` available in `PATH`
-- If you use a different ACP command, update the repo root `acp2openai.config.json`
+- If you use a different ACP command, update `examples/hono-server/acp2openai.config.json`
 
 Default local config:
 
@@ -19,8 +19,8 @@ Default local config:
 Run from the repo root:
 
 ```bash
-npm install
-npm run example:hono
+pnpm install
+pnpm run example:hono
 ```
 
 Server endpoints:
@@ -29,6 +29,7 @@ Server endpoints:
 - `http://localhost:3456/v1/models`
 - `http://localhost:3456/v1/chat/completions`
 - `http://localhost:3456/v1/responses`
+- `http://localhost:3456/v1/messages`
 
 ## Verify
 
@@ -57,4 +58,4 @@ curl http://localhost:3456/v1/chat/completions \
 
 ## Note
 
-This example reads `acp2openai.config.json` from the **current working directory**, so the simplest way is to start it from the repo root.
+The provided `pnpm run example:hono` script sets `ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json`, so the example uses the checked-in Hono config by default.

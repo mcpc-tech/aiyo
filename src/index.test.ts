@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ACP2OpenAI, type OpenAIChatCompletionRequest } from "./index.js";
+import {
+  ACP2OpenAI,
+  type AnthropicMessagesRequest,
+  type OpenAIChatCompletionRequest,
+  type OpenAIResponsesRequest,
+} from "./index.js";
 
 vi.mock("@mcpc-tech/acp-ai-provider", () => ({
   ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME: "acp.acp_provider_agent_dynamic_tool",
@@ -710,5 +715,395 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         }),
       }),
     );
+  });
+
+  it("applies request-phase middleware before building AI SDK params", async () => {
+    const { generateText } = await import("ai");
+
+    const req: OpenAIChatCompletionRequest = {
+      model: "default",
+      messages: [{ role: "user", content: "hello" }],
+    };
+
+    const adapterWithMiddleware = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      middleware: (ctx) => {
+        if (ctx.phase !== "request") return;
+        ctx.request.temperature = 0.25;
+        ctx.request.extra_body = {
+          ...ctx.request.extra_body,
+          topK: 9,
+        };
+        ctx.request.messages = [
+          { role: "system", content: "middleware system prompt" },
+          ...ctx.request.messages,
+        ];
+      },
+    });
+
+    await adapterWithMiddleware.handleChatCompletion(req);
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        temperature: 0.25,
+        topK: 9,
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: "middleware system prompt",
+          }),
+        ]),
+      }),
+    );
+    expect(req.temperature).toBeUndefined();
+    expect(req.extra_body).toBeUndefined();
+  });
+
+  it("applies params-phase middleware to final streamText call params", async () => {
+    const { streamText } = await import("ai");
+
+    const adapterWithMiddleware = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      middleware: (ctx) => {
+        if (ctx.phase !== "params" || ctx.callType !== "streamText") return;
+        ctx.params!.temperature = 0.05;
+        ctx.params!.topK = 3;
+        ctx.params!.messages = [
+          {
+            role: "system",
+            content: "params middleware prompt",
+          },
+        ];
+      },
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of adapterWithMiddleware.handleChatCompletionStream({
+      model: "default",
+      stream: true,
+      messages: [{ role: "user", content: "hello stream" }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[chunks.length - 1]).toBe("data: [DONE]\n\n");
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        temperature: 0.05,
+        topK: 3,
+        messages: [
+          {
+            role: "system",
+            content: "params middleware prompt",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("applies result-phase middleware to stream text deltas", async () => {
+    const adapterWithMiddleware = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      middleware: (ctx) => {
+        if (ctx.phase !== "result") return;
+        if (ctx.result?.eventType !== "text-delta") return;
+        ctx.result.textDelta = ctx.result.textDelta?.toUpperCase();
+      },
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of adapterWithMiddleware.handleChatCompletionStream({
+      model: "default",
+      stream: true,
+      messages: [{ role: "user", content: "hello stream" }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    const text = chunks
+      .filter((chunk) => chunk.startsWith("data: {") && chunk.includes("content"))
+      .map((chunk) => JSON.parse(chunk.replace("data: ", "")).choices[0].delta.content || "")
+      .join("");
+
+    expect(text).toBe("HELLO WORLD");
+  });
+
+  it("applies result-phase middleware to streamed tool calls and finish reason", async () => {
+    const { streamText } = await import("ai");
+
+    vi.mocked(streamText).mockReturnValueOnce({
+      textStream: (async function* () {})(),
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          toolCalls: Promise.resolve([
+            {
+              toolCallId: "call_1",
+              toolName: "demo_tool",
+              input: { city: "SF" },
+            },
+          ]),
+          finishReason: Promise.resolve("length"),
+        }).then(resolve),
+    } as any);
+
+    const adapterWithMiddleware = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      middleware: (ctx) => {
+        if (ctx.phase !== "result") return;
+        if (ctx.result?.eventType === "tool-calls") {
+          ctx.result.toolCalls = [];
+        }
+        if (ctx.result?.eventType === "finish") {
+          ctx.result.finishReason = "stop";
+        }
+      },
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of adapterWithMiddleware.handleChatCompletionStream({
+      model: "default",
+      stream: true,
+      messages: [{ role: "user", content: "tool stream" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "demo_tool",
+            parameters: {
+              type: "object",
+              properties: {},
+            },
+          },
+        },
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some((chunk) => chunk.includes("tool_calls"))).toBe(false);
+    const finalChunk = JSON.parse(
+      chunks[chunks.length - 2].replace("data: ", ""),
+    );
+    expect(finalChunk.choices[0].finish_reason).toBe("stop");
+  });
+
+  it("runs middleware for responses requests and preserves endpoint context", async () => {
+    const { generateText } = await import("ai");
+    const seen: Array<{ phase: string; endpoint: string; callType: string }> = [];
+
+    const adapterWithMiddleware = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      middleware: (ctx) => {
+        seen.push({
+          phase: ctx.phase,
+          endpoint: ctx.endpoint,
+          callType: ctx.callType,
+        });
+
+        if (ctx.phase !== "request" || ctx.endpoint !== "responses") return;
+        ctx.request.model = "gpt-test";
+        ctx.request.temperature = 0.33;
+      },
+    });
+
+    const req: OpenAIResponsesRequest = {
+      model: "default",
+      input: "hello responses",
+    };
+
+    const res = await adapterWithMiddleware.handleResponses(req);
+
+    expect(res.model).toBe("gpt-test");
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        temperature: 0.33,
+      }),
+    );
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "request",
+          endpoint: "responses",
+          callType: "generateText",
+        }),
+        expect.objectContaining({
+          phase: "params",
+          endpoint: "responses",
+          callType: "generateText",
+        }),
+      ]),
+    );
+  });
+
+  it("supports custom runtimeFactory for arbitrary AI SDK providers", async () => {
+    const { generateText } = await import("ai");
+    const { createACPProvider } = await import("@mcpc-tech/acp-ai-provider");
+
+    const adapterWithRuntimeFactory = new ACP2OpenAI({
+      defaultModel: "custom-default",
+      runtimeFactory: ({ request }) => ({
+        model: "custom-runtime-model",
+        modelName: `${request.model ?? "default"}-via-runtime`,
+        toolChoice: "none",
+      }),
+      listModels: ["custom-default", "custom-secondary"],
+    });
+
+    const response = await adapterWithRuntimeFactory.handleChatCompletion({
+      model: "custom-default",
+      messages: [{ role: "user", content: "hello custom runtime" }],
+    });
+
+    expect(createACPProvider).not.toHaveBeenCalled();
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "custom-runtime-model",
+        toolChoice: "none",
+      }),
+    );
+    expect(response.model).toBe("custom-default-via-runtime");
+
+    const modelsResponse = await adapterWithRuntimeFactory.handleRequest(
+      new Request("http://localhost/v1/models", { method: "GET" }),
+    );
+    const models = await modelsResponse.json();
+    expect(models.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "custom-default" }),
+        expect.objectContaining({ id: "custom-secondary" }),
+      ]),
+    );
+  });
+
+  it("converts Anthropic messages requests into AI SDK params", async () => {
+    const { generateText } = await import("ai");
+
+    const req: AnthropicMessagesRequest = {
+      model: "default",
+      system: [{ type: "text", text: "system prompt" }],
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Hello from Anthropic" }],
+        },
+      ],
+      max_tokens: 256,
+      top_k: 11,
+      stop_sequences: ["DONE"],
+      tool_choice: { type: "any" },
+      tools: [
+        {
+          name: "lookup_weather",
+          input_schema: { type: "object", properties: {} },
+        },
+      ],
+      extra_body: { seed: 3, acpConfig: defaultACPConfig },
+    };
+
+    const res = await adapter.handleAnthropicMessages(req);
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxOutputTokens: 256,
+        topK: 11,
+        stopSequences: ["DONE"],
+        toolChoice: { type: "tool", toolName: "lookup_weather" },
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "system", content: "system prompt" }),
+          expect.objectContaining({
+            role: "user",
+            content: "Hello from Anthropic",
+          }),
+        ]),
+      }),
+    );
+    expect(res.type).toBe("message");
+    expect(res.role).toBe("assistant");
+    expect(res.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: "Mocked response text",
+        }),
+      ]),
+    );
+  });
+
+  it("maps tool calls back into Anthropic tool_use blocks", async () => {
+    const { generateText } = await import("ai");
+
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: null,
+      finishReason: "tool-calls",
+      usage: {
+        inputTokens: 12,
+        outputTokens: 4,
+        totalTokens: 16,
+      },
+      toolCalls: [
+        {
+          toolCallId: "call_lookup",
+          toolName: "lookup_weather",
+          input: { city: "San Francisco" },
+        },
+      ],
+    } as any);
+
+    const res = await adapter.handleAnthropicMessages({
+      model: "default",
+      max_tokens: 128,
+      messages: [{ role: "user", content: "Use the weather tool." }],
+      tools: [
+        {
+          name: "lookup_weather",
+          input_schema: {
+            type: "object",
+            properties: { city: { type: "string" } },
+          },
+        },
+      ],
+    });
+
+    expect(res.stop_reason).toBe("tool_use");
+    expect(res.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_use",
+          name: "lookup_weather",
+          input: { city: "San Francisco" },
+        }),
+      ]),
+    );
+  });
+
+  it("streams Anthropic SSE events for messages", async () => {
+    const req: AnthropicMessagesRequest = {
+      model: "default",
+      stream: true,
+      max_tokens: 64,
+      messages: [{ role: "user", content: "stream please" }],
+    };
+
+    const chunks: string[] = [];
+    for await (const chunk of adapter.handleAnthropicMessagesStream(req)) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[0]).toContain("event: message_start");
+    expect(chunks.some((chunk) => chunk.includes("event: content_block_start"))).toBe(
+      true,
+    );
+    expect(chunks.some((chunk) => chunk.includes('"type":"text_delta"'))).toBe(
+      true,
+    );
+    expect(chunks.some((chunk) => chunk.includes("event: message_delta"))).toBe(
+      true,
+    );
+    expect(chunks[chunks.length - 1]).toContain("event: message_stop");
   });
 });

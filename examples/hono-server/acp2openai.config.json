@@ -2,6 +2,9 @@
   "port": 3456,
   "acp": {
     "command": "codebuddy",
-    "args": ["--acp"]
+    "args": ["--acp"],
+    "env": {
+      "CODEBUDDY_DEFER_TOOL_LOADING": "false"
+    }
   }
 }

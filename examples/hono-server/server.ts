@@ -11,6 +11,7 @@ interface FileConfig {
     command?: string;
     args?: string[];
     cwd?: string;
+    env?: Record<string, string>;
   };
 }
 
@@ -47,6 +48,7 @@ const adapter = createACP2OpenAI({
   defaultACPConfig: {
     command: process.env.ACP_COMMAND || file.acp?.command || 'claude-agent-acp',
     args: parseACPArgs(file.acp?.args),
+    env: file.acp?.env,
     session: {
       cwd: process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
       mcpServers: [],
@@ -108,6 +110,7 @@ app.get('/health', (c) => c.json({ status: 'ok' }));
 app.get('/v1/models', adapter.honoHandler());
 app.post('/v1/chat/completions', adapter.honoHandler());
 app.post('/v1/responses', adapter.honoHandler());
+app.post('/v1/messages', adapter.honoHandler());
 
 app.onError((err, c) => {
   console.error('[hono-example] Unhandled error:', err);

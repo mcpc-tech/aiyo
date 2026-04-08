@@ -37,6 +37,87 @@ export interface OpenAIExtraBody {
   seed?: number;
 }
 
+export type ACP2OpenAIEndpoint =
+  | "chat.completions"
+  | "responses"
+  | "messages";
+export type ACP2OpenAICallType = "generateText" | "streamText";
+export type ACP2OpenAIToolChoiceValue =
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "tool"; toolName: string };
+
+export interface ACP2OpenAIModelCallParams {
+  model: any;
+  messages: ModelMessage[];
+  temperature?: number;
+  maxOutputTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  stopSequences?: string[];
+  topK?: number;
+  seed?: number;
+  output?: ReturnType<typeof Output.json>;
+  tools?: Record<string, any>;
+  toolChoice?: ACP2OpenAIToolChoiceValue;
+}
+
+export interface ACP2ProviderRuntime {
+  model: any;
+  modelName?: string;
+  tools?: Record<string, any>;
+  toolChoice?: ACP2OpenAIToolChoiceValue;
+  cleanup?: () => void | Promise<void>;
+}
+
+export interface ACP2RuntimeFactoryContext {
+  endpoint: ACP2OpenAIEndpoint;
+  callType: ACP2OpenAICallType;
+  request: OpenAIChatCompletionRequest;
+  modelId?: string;
+  defaultModel?: string;
+}
+
+export type ACP2RuntimeFactory = (
+  context: ACP2RuntimeFactoryContext,
+) => ACP2ProviderRuntime | Promise<ACP2ProviderRuntime>;
+
+export type ACP2ListModelsResolver =
+  | (() => string[] | Promise<string[]>)
+  | string[];
+
+export type ACP2OpenAIResultEventType =
+  | "text-delta"
+  | "tool-calls"
+  | "finish";
+
+export interface ACP2OpenAIResultMutation {
+  eventType: ACP2OpenAIResultEventType;
+  textDelta?: string;
+  toolCalls?: any[];
+  finishReason?: string;
+}
+
+export interface ACP2OpenAIMiddlewareContext {
+  phase: "request" | "params" | "result";
+  endpoint: ACP2OpenAIEndpoint;
+  callType: ACP2OpenAICallType;
+  stream: boolean;
+  originalRequest:
+    | OpenAIChatCompletionRequest
+    | OpenAIResponsesRequest
+    | AnthropicMessagesRequest;
+  request: OpenAIChatCompletionRequest;
+  params?: ACP2OpenAIModelCallParams;
+  result?: ACP2OpenAIResultMutation;
+}
+
+export type ACP2OpenAIMiddleware = (
+  context: ACP2OpenAIMiddlewareContext,
+) => void | Promise<void>;
+
 // Extend OpenAI types with ACP-specific fields via extra_body
 export interface OpenAIChatCompletionRequest extends Omit<
   ChatCompletionCreateParams,
@@ -127,6 +208,106 @@ export interface OpenAIResponsesResponse {
   };
 }
 
+export interface AnthropicTextBlock {
+  type: "text";
+  text: string;
+  cache_control?: {
+    type?: string;
+  };
+}
+
+export interface AnthropicImageBlock {
+  type: "image";
+  source: {
+    type: "base64" | "url";
+    media_type?: string;
+    data?: string;
+    url?: string;
+  };
+}
+
+export interface AnthropicToolUseBlock {
+  type: "tool_use";
+  id: string;
+  name: string;
+  input?: Record<string, unknown>;
+}
+
+export interface AnthropicToolResultBlock {
+  type: "tool_result";
+  tool_use_id: string;
+  content: string | AnthropicTextBlock[];
+  is_error?: boolean;
+  cache_control?: {
+    type?: string;
+  };
+}
+
+export interface AnthropicThinkingBlock {
+  type: "thinking";
+  thinking: string;
+  signature?: string;
+}
+
+export type AnthropicContentBlock =
+  | AnthropicTextBlock
+  | AnthropicImageBlock
+  | AnthropicToolUseBlock
+  | AnthropicToolResultBlock
+  | AnthropicThinkingBlock;
+
+export interface AnthropicMessageParam {
+  role: "user" | "assistant";
+  content: string | AnthropicContentBlock[];
+}
+
+export interface AnthropicTool {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+}
+
+export type AnthropicToolChoice =
+  | { type: "auto" }
+  | { type: "any" }
+  | { type: "tool"; name: string }
+  | { type: "none" };
+
+export interface AnthropicMessagesRequest {
+  model?: string;
+  messages: AnthropicMessageParam[];
+  system?: string | AnthropicTextBlock[];
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  stop_sequences?: string[];
+  stream?: boolean;
+  tools?: AnthropicTool[];
+  tool_choice?: AnthropicToolChoice;
+  extra_body?: OpenAIExtraBody;
+}
+
+export type AnthropicStopReason =
+  | "end_turn"
+  | "max_tokens"
+  | "tool_use"
+  | "stop_sequence";
+
+export interface AnthropicMessageResponse {
+  id: string;
+  type: "message";
+  role: "assistant";
+  model: string;
+  content: Array<AnthropicTextBlock | AnthropicToolUseBlock>;
+  stop_reason: AnthropicStopReason;
+  stop_sequence: string | null;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
+
 export interface OpenAIModelObject {
   id: string;
   object: "model";
@@ -149,10 +330,14 @@ export type OpenAIStreamChunk = ChatCompletionChunk;
 export interface ACP2OpenAIConfig {
   defaultACPConfig?: ACPProviderSettings;
   defaultModel?: string;
+  middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[];
+  runtimeFactory?: ACP2RuntimeFactory;
+  listModels?: ACP2ListModelsResolver;
 }
 
 const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
 const RESPONSES_PATH = "/v1/responses";
+const MESSAGES_PATH = "/v1/messages";
 const MODELS_PATH = "/v1/models";
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -167,18 +352,30 @@ type OpenAIFinishReason =
   | "content_filter"
   | "function_call";
 
-type RuntimeContext = {
-  model: any;
+type RuntimeContext = ACP2ProviderRuntime & {
   modelName: string;
   tools: Record<string, any> | undefined;
-  toolChoice:
-    | "auto"
-    | "none"
-    | "required"
-    | { type: "tool"; toolName: string }
-    | undefined;
+  toolChoice: ACP2OpenAIToolChoiceValue | undefined;
   allowedToolNames: Set<string>;
   forcedToolName?: string;
+};
+
+type ToolSelectionContext = Pick<
+  RuntimeContext,
+  "allowedToolNames" | "forcedToolName"
+>;
+
+type PreparedChatInvocation = {
+  endpoint: ACP2OpenAIEndpoint;
+  callType: ACP2OpenAICallType;
+  originalRequest:
+    | OpenAIChatCompletionRequest
+    | OpenAIResponsesRequest
+    | AnthropicMessagesRequest;
+  request: OpenAIChatCompletionRequest;
+  runtime: RuntimeContext;
+  params: ACP2OpenAIModelCallParams;
+  toolSelection: ToolSelectionContext;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +387,134 @@ export class ACP2OpenAI {
 
   constructor(config: ACP2OpenAIConfig = {}) {
     this.config = config;
+  }
+
+  private getMiddlewares(): ACP2OpenAIMiddleware[] {
+    if (!this.config.middleware) return [];
+    return Array.isArray(this.config.middleware)
+      ? this.config.middleware
+      : [this.config.middleware];
+  }
+
+  private cloneRequest<T>(value: T): T {
+    if (typeof globalThis.structuredClone === "function") {
+      return globalThis.structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+
+  private async runMiddleware(
+    context: ACP2OpenAIMiddlewareContext,
+  ): Promise<void> {
+    for (const middleware of this.getMiddlewares()) {
+      await middleware(context);
+    }
+  }
+
+  private buildModelCallParams(
+    req: OpenAIChatCompletionRequest,
+    runtime: RuntimeContext,
+  ): ACP2OpenAIModelCallParams {
+    return {
+      model: runtime.model,
+      messages: this.convertMessages(req.messages),
+      ...this.buildGenerationOptions(req),
+      tools: runtime.tools,
+      toolChoice: runtime.toolChoice,
+    };
+  }
+
+  private buildToolSelectionFromParams(
+    params: ACP2OpenAIModelCallParams,
+  ): ToolSelectionContext {
+    const allowedToolNames = new Set<string>(Object.keys(params.tools ?? {}));
+    let forcedToolName: string | undefined;
+
+    if (
+      params.toolChoice &&
+      typeof params.toolChoice === "object" &&
+      params.toolChoice.type === "tool"
+    ) {
+      forcedToolName = params.toolChoice.toolName;
+    } else if (params.toolChoice === "required" && allowedToolNames.size === 1) {
+      forcedToolName = Array.from(allowedToolNames)[0];
+    }
+
+    return {
+      allowedToolNames,
+      forcedToolName,
+    };
+  }
+
+  private async prepareChatInvocation({
+    endpoint,
+    callType,
+    originalRequest,
+    request,
+  }: {
+    endpoint: ACP2OpenAIEndpoint;
+    callType: ACP2OpenAICallType;
+    originalRequest:
+      | OpenAIChatCompletionRequest
+      | OpenAIResponsesRequest
+      | AnthropicMessagesRequest;
+    request: OpenAIChatCompletionRequest;
+  }): Promise<PreparedChatInvocation> {
+    const mutableRequest = this.cloneRequest(request);
+    const stream = callType === "streamText";
+
+    await this.runMiddleware({
+      phase: "request",
+      endpoint,
+      callType,
+      stream,
+      originalRequest,
+      request: mutableRequest,
+    });
+
+    const runtime = await this.buildRuntime(mutableRequest, endpoint, callType);
+    const params = this.buildModelCallParams(mutableRequest, runtime);
+
+    await this.runMiddleware({
+      phase: "params",
+      endpoint,
+      callType,
+      stream,
+      originalRequest,
+      request: mutableRequest,
+      params,
+    });
+
+    return {
+      endpoint,
+      callType,
+      originalRequest,
+      request: mutableRequest,
+      runtime,
+      params,
+      toolSelection: this.buildToolSelectionFromParams(params),
+    };
+  }
+
+  private async mutateStreamResult(
+    invocation: PreparedChatInvocation,
+    result: ACP2OpenAIResultMutation,
+  ): Promise<ACP2OpenAIResultMutation> {
+    const mutableResult = this.cloneRequest(result);
+
+    await this.runMiddleware({
+      phase: "result",
+      endpoint: invocation.endpoint,
+      callType: invocation.callType,
+      stream: true,
+      originalRequest: invocation.originalRequest,
+      request: invocation.request,
+      params: invocation.params,
+      result: mutableResult,
+    });
+
+    return mutableResult;
   }
 
   private ensureACPConfig(
@@ -209,19 +534,48 @@ export class ACP2OpenAI {
     return id || undefined;
   }
 
-  private buildRuntime(req: OpenAIChatCompletionRequest): RuntimeContext {
-    const modelId = this.resolveModelId(req);
+  private buildDefaultACPRuntime(
+    req: OpenAIChatCompletionRequest,
+    modelId: string | undefined,
+  ): ACP2ProviderRuntime {
     const provider = createACPProvider(this.ensureACPConfig(req));
-
     const providerTools = provider.tools as Record<string, any> | undefined;
-    const requestTools = this.convertTools(req.tools);
-    const allowedToolNames = this.getAllowedToolNames(req.tools);
 
     return {
       model: provider.languageModel(modelId),
-      modelName: modelId ?? "",
-      tools: this.mergeTools(providerTools, requestTools),
-      toolChoice: this.convertToolChoice(req.tool_choice, req.tools),
+      modelName: modelId,
+      tools: providerTools,
+      cleanup: () => {
+        provider.cleanup();
+      },
+    };
+  }
+
+  private async buildRuntime(
+    req: OpenAIChatCompletionRequest,
+    endpoint: ACP2OpenAIEndpoint,
+    callType: ACP2OpenAICallType,
+  ): Promise<RuntimeContext> {
+    const modelId = this.resolveModelId(req);
+    const requestTools = this.convertTools(req.tools);
+    const allowedToolNames = this.getAllowedToolNames(req.tools);
+    const providerRuntime = this.config.runtimeFactory
+      ? await this.config.runtimeFactory({
+          endpoint,
+          callType,
+          request: this.cloneRequest(req),
+          modelId,
+          defaultModel: this.config.defaultModel,
+        })
+      : this.buildDefaultACPRuntime(req, modelId);
+
+    return {
+      ...providerRuntime,
+      modelName: providerRuntime.modelName ?? modelId ?? "",
+      tools: this.mergeTools(providerRuntime.tools, requestTools),
+      toolChoice:
+        providerRuntime.toolChoice ??
+        this.convertToolChoice(req.tool_choice, req.tools),
       allowedToolNames,
       forcedToolName: this.getForcedToolName(req.tool_choice, req.tools),
     };
@@ -285,12 +639,19 @@ export class ACP2OpenAI {
   private buildGenerationOptions(req: OpenAIChatCompletionRequest) {
     const output = this.convertResponseFormat(req.response_format);
 
+    const stopSequences = Array.isArray(req.stop)
+      ? req.stop.filter((value): value is string => typeof value === "string")
+      : typeof req.stop === "string"
+        ? [req.stop]
+        : undefined;
+
     return {
       temperature: req.temperature ?? undefined,
       maxOutputTokens: req.max_completion_tokens ?? req.max_tokens ?? undefined,
       topP: req.top_p ?? undefined,
       frequencyPenalty: req.frequency_penalty ?? undefined,
       presencePenalty: req.presence_penalty ?? undefined,
+      stopSequences,
       topK: req.extra_body?.topK,
       seed: req.extra_body?.seed,
       ...(output != null && { output }),
@@ -516,7 +877,7 @@ export class ACP2OpenAI {
       model: chatResponse.model,
       output: this.toResponsesOutput(
         message?.content ?? null,
-        this.toOpenAIToolCalls((message?.tool_calls as any[]) ?? undefined),
+        this.coerceOpenAIToolCalls(message?.tool_calls),
       ),
       usage: {
         input_tokens: usage?.prompt_tokens ?? 0,
@@ -524,6 +885,306 @@ export class ACP2OpenAI {
         total_tokens: usage?.total_tokens ?? 0,
       },
     };
+  }
+
+  private coerceOpenAIToolCalls(toolCalls: unknown): OpenAIToolCall[] | undefined {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return undefined;
+
+    const direct = toolCalls.filter(
+      (call): call is OpenAIToolCall =>
+        this.isRecord(call) &&
+        typeof call.id === "string" &&
+        call.type === "function" &&
+        this.isRecord(call.function) &&
+        typeof call.function.name === "string" &&
+        typeof call.function.arguments === "string",
+    );
+
+    if (direct.length > 0) {
+      return direct;
+    }
+
+    return this.toOpenAIToolCalls(toolCalls as any[]);
+  }
+
+  private stringifyAnthropicBlockText(
+    content: string | AnthropicTextBlock[],
+  ): string {
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+
+    return content
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  private convertAnthropicToolsToOpenAI(
+    tools?: AnthropicTool[],
+  ): OpenAITool[] | undefined {
+    if (!tools || tools.length === 0) return undefined;
+
+    const mapped = tools
+      .filter((tool) => !!tool.name)
+      .map((tool) => ({
+        type: "function" as const,
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.input_schema ?? { type: "object", properties: {} },
+        },
+      }));
+
+    return mapped.length > 0 ? mapped : undefined;
+  }
+
+  private convertAnthropicToolChoice(
+    toolChoice?: AnthropicToolChoice,
+  ): ChatCompletionToolChoiceOption | undefined {
+    if (!toolChoice) return undefined;
+
+    if (toolChoice.type === "tool") {
+      return {
+        type: "function",
+        function: { name: toolChoice.name },
+      };
+    }
+
+    if (toolChoice.type === "any") return "required";
+    if (toolChoice.type === "auto" || toolChoice.type === "none") {
+      return toolChoice.type;
+    }
+
+    return undefined;
+  }
+
+  private convertAnthropicMessagesToOpenAI(
+    req: AnthropicMessagesRequest,
+  ): ChatCompletionMessageParam[] {
+    const messages: ChatCompletionMessageParam[] = [];
+
+    if (typeof req.system === "string" && req.system.length > 0) {
+      messages.push({ role: "system", content: req.system });
+    } else if (Array.isArray(req.system) && req.system.length > 0) {
+      const systemText = req.system
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+
+      if (systemText.length > 0) {
+        messages.push({ role: "system", content: systemText });
+      }
+    }
+
+    for (const message of req.messages ?? []) {
+      if (typeof message.content === "string") {
+        messages.push({ role: message.role, content: message.content });
+        continue;
+      }
+
+      if (!Array.isArray(message.content)) continue;
+
+      if (message.role === "user") {
+        const userParts: any[] = [];
+
+        for (const block of message.content) {
+          if (block.type === "text") {
+            userParts.push({ type: "text", text: block.text });
+            continue;
+          }
+
+          if (block.type === "image") {
+            const source = block.source;
+            const url =
+              source.type === "base64" && source.data
+                ? `data:${source.media_type ?? "application/octet-stream"};base64,${source.data}`
+                : source.url;
+
+            if (url) {
+              userParts.push({
+                type: "image_url",
+                image_url: { url },
+              });
+            }
+            continue;
+          }
+
+          if (block.type === "tool_result") {
+            messages.push({
+              role: "tool",
+              tool_call_id: block.tool_use_id,
+              content: this.stringifyAnthropicBlockText(block.content),
+            });
+          }
+        }
+
+        if (userParts.length === 1 && userParts[0]?.type === "text") {
+          messages.push({ role: "user", content: userParts[0].text });
+        } else if (userParts.length > 0) {
+          messages.push({ role: "user", content: userParts as any });
+        }
+
+        continue;
+      }
+
+      const textParts: string[] = [];
+      const toolCalls: OpenAIToolCall[] = [];
+
+      for (const block of message.content) {
+        if (block.type === "text") {
+          textParts.push(block.text);
+          continue;
+        }
+
+        if (block.type === "tool_use") {
+          toolCalls.push({
+            id: block.id,
+            type: "function",
+            function: {
+              name: block.name,
+              arguments: JSON.stringify(block.input ?? {}),
+            },
+          });
+        }
+      }
+
+      if (textParts.length === 0 && toolCalls.length === 0) continue;
+
+      messages.push({
+        role: "assistant",
+        content: textParts.length > 0 ? textParts.join("\n") : null,
+        ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
+      } as ChatCompletionMessageParam);
+    }
+
+    return messages;
+  }
+
+  private toChatCompletionRequestFromAnthropic(
+    req: AnthropicMessagesRequest,
+  ): OpenAIChatCompletionRequest {
+    const extraBody =
+      req.extra_body || req.top_k != null
+        ? {
+            ...(req.extra_body ?? {}),
+            ...(req.top_k != null ? { topK: req.top_k } : {}),
+          }
+        : undefined;
+
+    return {
+      model: req.model || this.config.defaultModel || "",
+      messages: this.convertAnthropicMessagesToOpenAI(req),
+      tools: this.convertAnthropicToolsToOpenAI(req.tools),
+      tool_choice: this.convertAnthropicToolChoice(req.tool_choice),
+      temperature: req.temperature,
+      max_tokens: req.max_tokens,
+      top_p: req.top_p,
+      stop: req.stop_sequences,
+      stream: req.stream,
+      extra_body: extraBody,
+    };
+  }
+
+  private mapOpenAIStopReasonToAnthropic(
+    finishReason: string | undefined,
+    toolCalls?: OpenAIToolCall[],
+  ): AnthropicStopReason {
+    if (toolCalls && toolCalls.length > 0) {
+      return "tool_use";
+    }
+
+    const resolved = this.resolveNonStreamFinishReason(finishReason, toolCalls);
+
+    switch (resolved) {
+      case "length":
+        return "max_tokens";
+      case "tool_calls":
+        return "tool_use";
+      case "content_filter":
+        return "stop_sequence";
+      case "stop":
+      default:
+        return "end_turn";
+    }
+  }
+
+  private toAnthropicUsageFromOpenAI(
+    usage: OpenAIChatCompletionResponse["usage"] | undefined,
+  ): AnthropicMessageResponse["usage"] {
+    return {
+      input_tokens: usage?.prompt_tokens ?? 0,
+      output_tokens: usage?.completion_tokens ?? 0,
+    };
+  }
+
+  private toAnthropicUsageFromAISDK(
+    usage:
+      | {
+          inputTokens?: number;
+          outputTokens?: number;
+        }
+      | undefined,
+  ): AnthropicMessageResponse["usage"] {
+    return {
+      input_tokens: usage?.inputTokens ?? 0,
+      output_tokens: usage?.outputTokens ?? 0,
+    };
+  }
+
+  private toAnthropicContentBlocks(
+    messageContent: string | null,
+    toolCalls: OpenAIToolCall[] | undefined,
+  ): Array<AnthropicTextBlock | AnthropicToolUseBlock> {
+    const content: Array<AnthropicTextBlock | AnthropicToolUseBlock> = [];
+
+    if (messageContent && messageContent.length > 0) {
+      content.push({ type: "text", text: messageContent });
+    }
+
+    for (const call of toolCalls ?? []) {
+      if (call.type !== "function") continue;
+
+      content.push({
+        type: "tool_use",
+        id: call.id,
+        name: call.function.name,
+        input: this.parseArgsObject(call.function.arguments),
+      });
+    }
+
+    if (content.length === 0) {
+      content.push({ type: "text", text: "" });
+    }
+
+    return content;
+  }
+
+  private mapChatToAnthropic(
+    chatResponse: OpenAIChatCompletionResponse,
+  ): AnthropicMessageResponse {
+    const choice = chatResponse.choices[0];
+    const toolCalls = this.coerceOpenAIToolCalls(choice?.message?.tool_calls);
+
+    return {
+      id: `msg_${Math.random().toString(36).slice(2, 15)}`,
+      type: "message",
+      role: "assistant",
+      model: chatResponse.model,
+      content: this.toAnthropicContentBlocks(
+        choice?.message?.content ?? null,
+        toolCalls,
+      ),
+      stop_reason: this.mapOpenAIStopReasonToAnthropic(
+        choice?.finish_reason ?? undefined,
+        toolCalls,
+      ),
+      stop_sequence: null,
+      usage: this.toAnthropicUsageFromOpenAI(chatResponse.usage),
+    };
+  }
+
+  private formatSSEEvent(event: string, data: unknown): string {
+    return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   }
 
   private parseSSEDataChunk(chunk: string): OpenAIStreamChunk | null {
@@ -583,6 +1244,10 @@ export class ACP2OpenAI {
     return path === RESPONSES_PATH && method === "POST";
   }
 
+  private isAnthropicMessagesRequest(path: string, method: string): boolean {
+    return path === MESSAGES_PATH && method === "POST";
+  }
+
   private isModelsListRequest(path: string, method: string): boolean {
     return path === MODELS_PATH && method === "GET";
   }
@@ -591,11 +1256,29 @@ export class ACP2OpenAI {
     return (
       this.isChatCompletionsRequest(path, method) ||
       this.isResponsesRequest(path, method) ||
+      this.isAnthropicMessagesRequest(path, method) ||
       this.isModelsListRequest(path, method)
     );
   }
 
-  private async handleModelsList(): Promise<OpenAIModelListResponse> {
+  private async resolveConfiguredModelIds(): Promise<string[]> {
+    if (Array.isArray(this.config.listModels)) {
+      return this.config.listModels.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      );
+    }
+
+    if (typeof this.config.listModels === "function") {
+      const resolved = await this.config.listModels();
+      return resolved.filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      );
+    }
+
+    if (this.config.runtimeFactory) {
+      return [this.config.defaultModel ?? "default"];
+    }
+
     if (!this.config.defaultACPConfig) {
       throw new Error(
         "defaultACPConfig is required for GET /v1/models (needs ACP initSession)",
@@ -606,32 +1289,30 @@ export class ACP2OpenAI {
 
     try {
       const sessionInfo = await provider.initSession();
-      const created = Math.floor(Date.now() / 1000);
-      const availableModelIds = (sessionInfo.models?.availableModels ?? [])
-        .map((model) => model.modelId)
-        .filter((id): id is string => Boolean(id));
-
-      const modelCandidates = [
-        ...availableModelIds,
+      return [
+        ...(sessionInfo.models?.availableModels ?? []).map((model) => model.modelId),
         sessionInfo.models?.currentModelId,
         this.config.defaultModel,
         "default",
-      ].filter((m): m is string => Boolean(m));
-
-      const modelIds = Array.from(new Set(modelCandidates));
-
-      return {
-        object: "list",
-        data: modelIds.map((id) => ({
-          id,
-          object: "model",
-          created,
-          owned_by: "acp2openai",
-        })),
-      };
+      ].filter((id): id is string => Boolean(id));
     } finally {
       provider.cleanup();
     }
+  }
+
+  private async handleModelsList(): Promise<OpenAIModelListResponse> {
+    const created = Math.floor(Date.now() / 1000);
+    const modelIds = Array.from(new Set(await this.resolveConfiguredModelIds()));
+
+    return {
+      object: "list",
+      data: modelIds.map((id) => ({
+        id,
+        object: "model",
+        created,
+        owned_by: "acp2openai",
+      })),
+    };
   }
 
   private createSSEReadableStream(
@@ -963,7 +1644,7 @@ export class ACP2OpenAI {
 
   private sanitizeToolCalls(
     toolCalls: any[] | undefined,
-    runtime: RuntimeContext,
+    toolSelection: ToolSelectionContext,
   ): any[] | undefined {
     if (!toolCalls || toolCalls.length === 0) return undefined;
 
@@ -975,11 +1656,11 @@ export class ACP2OpenAI {
       const name = String(tc?.toolName ?? "");
       if (!name) return false;
       if (
-        runtime.allowedToolNames.size > 0 &&
-        !runtime.allowedToolNames.has(name)
+        toolSelection.allowedToolNames.size > 0 &&
+        !toolSelection.allowedToolNames.has(name)
       )
         return false;
-      if (runtime.forcedToolName && name !== runtime.forcedToolName)
+      if (toolSelection.forcedToolName && name !== toolSelection.forcedToolName)
         return false;
       return true;
     });
@@ -989,9 +1670,9 @@ export class ACP2OpenAI {
 
   private coerceForcedToolCall(
     rawToolCalls: any[] | undefined,
-    runtime: RuntimeContext,
+    toolSelection: ToolSelectionContext,
   ): any[] | undefined {
-    if (!runtime.forcedToolName) return undefined;
+    if (!toolSelection.forcedToolName) return undefined;
     if (!rawToolCalls || rawToolCalls.length === 0) return undefined;
 
     const first = this.normalizeToolCall(rawToolCalls[0]);
@@ -1000,18 +1681,18 @@ export class ACP2OpenAI {
     return [
       {
         ...first,
-        toolName: runtime.forcedToolName,
+        toolName: toolSelection.forcedToolName,
       },
     ];
   }
 
   private pickToolCalls(
     rawToolCalls: any[] | undefined,
-    runtime: RuntimeContext,
+    toolSelection: ToolSelectionContext,
   ): any[] | undefined {
     return (
-      this.sanitizeToolCalls(rawToolCalls, runtime) ??
-      this.coerceForcedToolCall(rawToolCalls, runtime)
+      this.sanitizeToolCalls(rawToolCalls, toolSelection) ??
+      this.coerceForcedToolCall(rawToolCalls, toolSelection)
     );
   }
 
@@ -1076,56 +1757,189 @@ export class ACP2OpenAI {
     }));
   }
 
+  private async cleanupRuntime(runtime: RuntimeContext): Promise<void> {
+    await runtime.cleanup?.();
+  }
+
+  private async resolveMaybePromise<T>(
+    value: T | Promise<T> | PromiseLike<T>,
+  ): Promise<T> {
+    return await value;
+  }
+
+  private async runPreparedChatCompletion(
+    invocation: PreparedChatInvocation,
+  ): Promise<OpenAIChatCompletionResponse> {
+    try {
+      const result = await generateText(invocation.params);
+
+      const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
+      const created = Math.floor(Date.now() / 1000);
+      const rawToolCalls = result.toolCalls;
+      const selectedToolCalls = this.pickToolCalls(
+        rawToolCalls,
+        invocation.toolSelection,
+      );
+      const openAIToolCalls = this.toOpenAIToolCalls(selectedToolCalls);
+
+      return {
+        id,
+        object: "chat.completion",
+        created,
+        model: invocation.runtime.modelName,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: result.text || null,
+              refusal: null,
+              tool_calls: openAIToolCalls,
+            },
+            finish_reason: this.resolveNonStreamFinishReason(
+              result.finishReason,
+              openAIToolCalls,
+            ),
+            logprobs: null,
+          },
+        ],
+        usage: {
+          prompt_tokens: result.usage?.inputTokens ?? 0,
+          completion_tokens: result.usage?.outputTokens ?? 0,
+          total_tokens: result.usage?.totalTokens ?? 0,
+        },
+        service_tier: null,
+      };
+    } finally {
+      await this.cleanupRuntime(invocation.runtime);
+    }
+  }
+
+  private async *runPreparedChatCompletionStream(
+    invocation: PreparedChatInvocation,
+  ): AsyncIterable<string> {
+    const result = streamText(invocation.params);
+
+    try {
+      const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
+      const created = Math.floor(Date.now() / 1000);
+
+      let isFirst = true;
+
+      for await (const chunk of result.textStream) {
+        const mutated = await this.mutateStreamResult(invocation, {
+          eventType: "text-delta",
+          textDelta: chunk,
+        });
+        const textDelta = mutated.textDelta ?? "";
+        if (textDelta.length === 0) continue;
+
+        const streamChunk: OpenAIStreamChunk = {
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model: invocation.runtime.modelName,
+          choices: [
+            {
+              index: 0,
+              delta: isFirst
+                ? { role: "assistant", content: textDelta }
+                : { content: textDelta },
+              finish_reason: null,
+            },
+          ],
+        };
+        isFirst = false;
+        yield `data: ${JSON.stringify(streamChunk)}\n\n`;
+      }
+
+      const awaited = result;
+      const rawToolCalls = await this.resolveMaybePromise(awaited.toolCalls);
+      let selectedToolCalls = this.pickToolCalls(rawToolCalls, invocation.toolSelection);
+      const mutatedToolCalls = await this.mutateStreamResult(invocation, {
+        eventType: "tool-calls",
+        toolCalls: selectedToolCalls,
+      });
+      selectedToolCalls = mutatedToolCalls.toolCalls;
+
+      if (selectedToolCalls && selectedToolCalls.length > 0) {
+        for (let i = 0; i < selectedToolCalls.length; i++) {
+          const tc = selectedToolCalls[i];
+          const toolCallChunk: OpenAIStreamChunk = {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: invocation.runtime.modelName,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      index: i,
+                      id: tc.toolCallId,
+                      type: "function",
+                      function: {
+                        name: tc.toolName,
+                        arguments: JSON.stringify(tc.input ?? {}),
+                      },
+                    },
+                  ],
+                },
+                finish_reason: null,
+              },
+            ],
+          };
+          yield `data: ${JSON.stringify(toolCallChunk)}\n\n`;
+        }
+      }
+
+      const finishReasonValue = await this.resolveMaybePromise(
+        awaited.finishReason,
+      );
+      const mutatedFinish = await this.mutateStreamResult(invocation, {
+        eventType: "finish",
+        finishReason: finishReasonValue,
+      });
+
+      const finalChunk: OpenAIStreamChunk = {
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model: invocation.runtime.modelName,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: this.resolveStreamFinishReason(
+              mutatedFinish.finishReason,
+              selectedToolCalls,
+            ),
+          },
+        ],
+      };
+
+      yield `data: ${JSON.stringify(finalChunk)}\n\n`;
+      yield "data: [DONE]\n\n";
+    } finally {
+      await this.cleanupRuntime(invocation.runtime);
+    }
+  }
+
   /**
    * Handle non-streaming chat completion
    */
   async handleChatCompletion(
     req: OpenAIChatCompletionRequest,
   ): Promise<OpenAIChatCompletionResponse> {
-    const runtime = this.buildRuntime(req);
-
-    const result = await generateText({
-      model: runtime.model,
-      messages: this.convertMessages(req.messages),
-      ...this.buildGenerationOptions(req),
-      tools: runtime.tools,
-      toolChoice: runtime.toolChoice,
+    const invocation = await this.prepareChatInvocation({
+      endpoint: "chat.completions",
+      callType: "generateText",
+      originalRequest: req,
+      request: req,
     });
 
-    const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
-    const created = Math.floor(Date.now() / 1000);
-    const rawToolCalls = result.toolCalls;
-    const selectedToolCalls = this.pickToolCalls(rawToolCalls, runtime);
-    const openAIToolCalls = this.toOpenAIToolCalls(selectedToolCalls);
-
-    return {
-      id,
-      object: "chat.completion",
-      created,
-      model: runtime.modelName,
-      choices: [
-        {
-          index: 0,
-          message: {
-            role: "assistant",
-            content: result.text || null,
-            refusal: null,
-            tool_calls: openAIToolCalls,
-          },
-          finish_reason: this.resolveNonStreamFinishReason(
-            result.finishReason,
-            openAIToolCalls,
-          ),
-          logprobs: null,
-        },
-      ],
-      usage: {
-        prompt_tokens: result.usage?.inputTokens ?? 0,
-        completion_tokens: result.usage?.outputTokens ?? 0,
-        total_tokens: result.usage?.totalTokens ?? 0,
-      },
-      service_tier: null,
-    };
+    return this.runPreparedChatCompletion(invocation);
   }
 
   /**
@@ -1135,104 +1949,27 @@ export class ACP2OpenAI {
   async *handleChatCompletionStream(
     req: OpenAIChatCompletionRequest,
   ): AsyncIterable<string> {
-    const runtime = this.buildRuntime(req);
-
-    const result = streamText({
-      model: runtime.model,
-      messages: this.convertMessages(req.messages),
-      ...this.buildGenerationOptions(req),
-      tools: runtime.tools,
-      toolChoice: runtime.toolChoice,
+    const invocation = await this.prepareChatInvocation({
+      endpoint: "chat.completions",
+      callType: "streamText",
+      originalRequest: req,
+      request: req,
     });
 
-    const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
-    const created = Math.floor(Date.now() / 1000);
-
-    let isFirst = true;
-
-    for await (const chunk of result.textStream) {
-      const streamChunk: OpenAIStreamChunk = {
-        id,
-        object: "chat.completion.chunk",
-        created,
-        model: runtime.modelName,
-        choices: [
-          {
-            index: 0,
-            delta: isFirst
-              ? { role: "assistant", content: chunk }
-              : { content: chunk },
-            finish_reason: null,
-          },
-        ],
-      };
-      isFirst = false;
-      yield `data: ${JSON.stringify(streamChunk)}\n\n`;
-    }
-
-    const awaited = await result;
-    const rawToolCalls = await awaited.toolCalls;
-    const selectedToolCalls = this.pickToolCalls(rawToolCalls, runtime);
-    const finishReasonValue = await awaited.finishReason;
-
-    if (selectedToolCalls && selectedToolCalls.length > 0) {
-      for (let i = 0; i < selectedToolCalls.length; i++) {
-        const tc = selectedToolCalls[i];
-        const toolCallChunk: OpenAIStreamChunk = {
-          id,
-          object: "chat.completion.chunk",
-          created,
-          model: runtime.modelName,
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  {
-                    index: i,
-                    id: tc.toolCallId,
-                    type: "function",
-                    function: {
-                      name: tc.toolName,
-                      arguments: JSON.stringify(tc.input ?? {}),
-                    },
-                  },
-                ],
-              },
-              finish_reason: null,
-            },
-          ],
-        };
-        yield `data: ${JSON.stringify(toolCallChunk)}\n\n`;
-      }
-    }
-
-    const finalChunk: OpenAIStreamChunk = {
-      id,
-      object: "chat.completion.chunk",
-      created,
-      model: runtime.modelName,
-      choices: [
-        {
-          index: 0,
-          delta: {},
-          finish_reason: this.resolveStreamFinishReason(
-            finishReasonValue,
-            selectedToolCalls,
-          ),
-        },
-      ],
-    };
-
-    yield `data: ${JSON.stringify(finalChunk)}\n\n`;
-    yield "data: [DONE]\n\n";
+    yield* this.runPreparedChatCompletionStream(invocation);
   }
 
   async handleResponses(
     req: OpenAIResponsesRequest,
   ): Promise<OpenAIResponsesResponse> {
     const chatReq = this.toChatCompletionRequestFromResponses(req);
-    const chatResponse = await this.handleChatCompletion(chatReq);
+    const invocation = await this.prepareChatInvocation({
+      endpoint: "responses",
+      callType: "generateText",
+      originalRequest: req,
+      request: chatReq,
+    });
+    const chatResponse = await this.runPreparedChatCompletion(invocation);
     return this.mapChatToResponses(chatResponse);
   }
 
@@ -1243,9 +1980,15 @@ export class ACP2OpenAI {
       ...req,
       stream: true,
     });
+    const invocation = await this.prepareChatInvocation({
+      endpoint: "responses",
+      callType: "streamText",
+      originalRequest: req,
+      request: chatReq,
+    });
     const responseId = `resp_${Math.random().toString(36).slice(2, 15)}`;
     const createdAt = Math.floor(Date.now() / 1000);
-    const modelName = chatReq.model || "default";
+    const modelName = invocation.runtime.modelName || "default";
     const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
 
     yield `event: response.created\ndata: ${JSON.stringify({
@@ -1263,7 +2006,7 @@ export class ACP2OpenAI {
     let fullText = "";
     let toolCalls: OpenAIToolCall[] = [];
 
-    for await (const chunk of this.handleChatCompletionStream(chatReq)) {
+    for await (const chunk of this.runPreparedChatCompletionStream(invocation)) {
       const parsed = this.parseSSEDataChunk(chunk);
       if (!parsed) continue;
 
@@ -1325,6 +2068,164 @@ export class ACP2OpenAI {
     yield "data: [DONE]\n\n";
   }
 
+  async handleAnthropicMessages(
+    req: AnthropicMessagesRequest,
+  ): Promise<AnthropicMessageResponse> {
+    const chatReq = this.toChatCompletionRequestFromAnthropic(req);
+    const invocation = await this.prepareChatInvocation({
+      endpoint: "messages",
+      callType: "generateText",
+      originalRequest: req,
+      request: chatReq,
+    });
+    const chatResponse = await this.runPreparedChatCompletion(invocation);
+    return this.mapChatToAnthropic(chatResponse);
+  }
+
+  async *handleAnthropicMessagesStream(
+    req: AnthropicMessagesRequest,
+  ): AsyncIterable<string> {
+    const chatReq = this.toChatCompletionRequestFromAnthropic({
+      ...req,
+      stream: true,
+    });
+    const invocation = await this.prepareChatInvocation({
+      endpoint: "messages",
+      callType: "streamText",
+      originalRequest: req,
+      request: chatReq,
+    });
+    const result = streamText(invocation.params);
+    const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
+    const modelName = invocation.runtime.modelName || chatReq.model || "default";
+    const textBlockIndex = 0;
+    let hasTextBlock = false;
+    let nextBlockIndex = 1;
+
+    yield this.formatSSEEvent("message_start", {
+      type: "message_start",
+      message: {
+        id: messageId,
+        type: "message",
+        role: "assistant",
+        content: [],
+        model: modelName,
+        stop_reason: null,
+        stop_sequence: null,
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+        },
+      },
+    });
+
+    try {
+      for await (const chunk of result.textStream) {
+        const mutated = await this.mutateStreamResult(invocation, {
+          eventType: "text-delta",
+          textDelta: chunk,
+        });
+        const textDelta = mutated.textDelta ?? "";
+        if (textDelta.length === 0) continue;
+
+        if (!hasTextBlock) {
+          hasTextBlock = true;
+          yield this.formatSSEEvent("content_block_start", {
+            type: "content_block_start",
+            index: textBlockIndex,
+            content_block: {
+              type: "text",
+              text: "",
+            },
+          });
+        }
+
+        yield this.formatSSEEvent("content_block_delta", {
+          type: "content_block_delta",
+          index: textBlockIndex,
+          delta: {
+            type: "text_delta",
+            text: textDelta,
+          },
+        });
+      }
+
+      if (hasTextBlock) {
+        yield this.formatSSEEvent("content_block_stop", {
+          type: "content_block_stop",
+          index: textBlockIndex,
+        });
+      }
+
+      const awaited = result;
+      const rawToolCalls = await this.resolveMaybePromise(awaited.toolCalls);
+      let selectedToolCalls = this.pickToolCalls(
+        rawToolCalls,
+        invocation.toolSelection,
+      );
+      const mutatedToolCalls = await this.mutateStreamResult(invocation, {
+        eventType: "tool-calls",
+        toolCalls: selectedToolCalls,
+      });
+      selectedToolCalls = mutatedToolCalls.toolCalls;
+      const openAIToolCalls = this.toOpenAIToolCalls(selectedToolCalls);
+
+      for (const toolCall of selectedToolCalls ?? []) {
+        const blockIndex = nextBlockIndex++;
+        yield this.formatSSEEvent("content_block_start", {
+          type: "content_block_start",
+          index: blockIndex,
+          content_block: {
+            type: "tool_use",
+            id: toolCall.toolCallId,
+            name: toolCall.toolName,
+            input: {},
+          },
+        });
+        yield this.formatSSEEvent("content_block_delta", {
+          type: "content_block_delta",
+          index: blockIndex,
+          delta: {
+            type: "input_json_delta",
+            partial_json: JSON.stringify(toolCall.input ?? {}),
+          },
+        });
+        yield this.formatSSEEvent("content_block_stop", {
+          type: "content_block_stop",
+          index: blockIndex,
+        });
+      }
+
+      const finishReasonValue = await this.resolveMaybePromise(
+        awaited.finishReason,
+      );
+      const mutatedFinish = await this.mutateStreamResult(invocation, {
+        eventType: "finish",
+        finishReason: finishReasonValue,
+      });
+      const usage = await this.resolveMaybePromise(
+        (awaited as { usage?: any }).usage,
+      );
+
+      yield this.formatSSEEvent("message_delta", {
+        type: "message_delta",
+        delta: {
+          stop_reason: this.mapOpenAIStopReasonToAnthropic(
+            mutatedFinish.finishReason,
+            openAIToolCalls,
+          ),
+          stop_sequence: null,
+        },
+        usage: this.toAnthropicUsageFromAISDK(usage),
+      });
+      yield this.formatSSEEvent("message_stop", {
+        type: "message_stop",
+      });
+    } finally {
+      await this.cleanupRuntime(invocation.runtime);
+    }
+  }
+
   /**
    * Framework-agnostic handler for standard Request/Response
    * (Works with Hono, Cloudflare Workers, etc.)
@@ -1356,6 +2257,24 @@ export class ACP2OpenAI {
       }
 
       const response = await this.handleResponses(body);
+      return new Response(JSON.stringify(response), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (this.isAnthropicMessagesRequest(url.pathname, request.method)) {
+      const body = (await request.json()) as AnthropicMessagesRequest;
+
+      if (body.stream) {
+        return new Response(
+          this.createSSEReadableStream(this.handleAnthropicMessagesStream(body)),
+          {
+            headers: SSE_HEADERS,
+          },
+        );
+      }
+
+      const response = await this.handleAnthropicMessages(body);
       return new Response(JSON.stringify(response), {
         headers: { "Content-Type": "application/json" },
       });
@@ -1399,9 +2318,11 @@ export class ACP2OpenAI {
       }
 
       const isResponses = this.isResponsesRequest(req.path, req.method);
+      const isAnthropic = this.isAnthropicMessagesRequest(req.path, req.method);
       const body = req.body as
         | OpenAIChatCompletionRequest
-        | OpenAIResponsesRequest;
+        | OpenAIResponsesRequest
+        | AnthropicMessagesRequest;
 
       if (body.stream) {
         res.setHeader("Content-Type", "text/event-stream");
@@ -1412,6 +2333,12 @@ export class ACP2OpenAI {
           if (isResponses) {
             for await (const chunk of this.handleResponsesStream(
               body as OpenAIResponsesRequest,
+            )) {
+              res.write(chunk);
+            }
+          } else if (isAnthropic) {
+            for await (const chunk of this.handleAnthropicMessagesStream(
+              body as AnthropicMessagesRequest,
             )) {
               res.write(chunk);
             }
@@ -1432,9 +2359,11 @@ export class ACP2OpenAI {
       try {
         const response = isResponses
           ? await this.handleResponses(body as OpenAIResponsesRequest)
-          : await this.handleChatCompletion(
-              body as OpenAIChatCompletionRequest,
-            );
+          : isAnthropic
+            ? await this.handleAnthropicMessages(body as AnthropicMessagesRequest)
+            : await this.handleChatCompletion(
+                body as OpenAIChatCompletionRequest,
+              );
         res.json(response);
       } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -1456,18 +2385,27 @@ export class ACP2OpenAI {
       }
 
       const isResponses = this.isResponsesRequest(c.req.path, c.req.method);
+      const isAnthropic = this.isAnthropicMessagesRequest(
+        c.req.path,
+        c.req.method,
+      );
       const body = (await c.req.json()) as
         | OpenAIChatCompletionRequest
-        | OpenAIResponsesRequest;
+        | OpenAIResponsesRequest
+        | AnthropicMessagesRequest;
 
       if (body.stream) {
         return c.newResponse(
           this.createSSEReadableStream(
             isResponses
               ? this.handleResponsesStream(body as OpenAIResponsesRequest)
-              : this.handleChatCompletionStream(
-                  body as OpenAIChatCompletionRequest,
-                ),
+              : isAnthropic
+                ? this.handleAnthropicMessagesStream(
+                    body as AnthropicMessagesRequest,
+                  )
+                : this.handleChatCompletionStream(
+                    body as OpenAIChatCompletionRequest,
+                  ),
           ),
           {
             headers: SSE_HEADERS,
@@ -1477,7 +2415,9 @@ export class ACP2OpenAI {
 
       const response = isResponses
         ? await this.handleResponses(body as OpenAIResponsesRequest)
-        : await this.handleChatCompletion(body as OpenAIChatCompletionRequest);
+        : isAnthropic
+          ? await this.handleAnthropicMessages(body as AnthropicMessagesRequest)
+          : await this.handleChatCompletion(body as OpenAIChatCompletionRequest);
       return c.json(response);
     };
   }
