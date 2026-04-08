@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { spawn } from "node:child_process";
+import { runInteractiveCommand } from "./process-utils.js";
 
 const PROVIDER_ID = "acp2openai";
 const MODEL_MARKER = "_acp2openaiLaunch";
@@ -15,6 +15,7 @@ const MODEL_MARKER = "_acp2openaiLaunch";
 interface OpenCodeLaunchOptions {
   baseURL: string;
   model: string;
+  cwd: string;
   extraArgs: string[];
 }
 
@@ -106,40 +107,6 @@ function updateConfig(configPath: string, baseURL: string, model: string) {
   writeJsonWithBackup(configPath, config);
 }
 
-async function runInteractiveCommand(
-  command: string,
-  args: string[],
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: "inherit",
-      env: process.env,
-    });
-
-    child.on("error", (error) => {
-      reject(
-        new Error(
-          `Failed to start ${command}: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
-    });
-
-    child.on("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      if (signal) {
-        reject(new Error(`${command} exited with signal ${signal}`));
-        return;
-      }
-
-      reject(new Error(`${command} exited with code ${code ?? "unknown"}`));
-    });
-  });
-}
-
 export async function launchOpenCode(
   options: OpenCodeLaunchOptions,
 ): Promise<void> {
@@ -150,5 +117,7 @@ export async function launchOpenCode(
   updateConfig(configPath, options.baseURL, options.model);
   updateRecentState(statePath, options.model);
 
-  await runInteractiveCommand("opencode", options.extraArgs);
+  await runInteractiveCommand("opencode", options.extraArgs, {
+    cwd: options.cwd,
+  });
 }

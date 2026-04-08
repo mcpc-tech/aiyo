@@ -64,6 +64,7 @@ export async function startProxyServer(
     defaultACPConfig: {
       command: config.acpCommand,
       args: config.acpArgs,
+      env: config.acpEnv,
       session: {
         cwd: config.cwd,
         mcpServers: [],
@@ -122,6 +123,11 @@ export async function startProxyServer(
       const response = await adapter.handleRequest(request);
       await handleNodeResponse(res, response);
     } catch (error) {
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+
       jsonResponse(res, 500, {
         error: error instanceof Error ? error.message : String(error),
       });

@@ -5,6 +5,7 @@ Minimal launcher for local agent integrations backed by the `@yaonyan/acp2openai
 ## Supported integrations
 
 - `opencode`
+- `claude` / `claude-code`
 
 ## Usage
 
@@ -13,6 +14,7 @@ From the repo root:
 ```bash
 pnpm install
 pnpm run launch opencode
+pnpm run launch claude
 ```
 
 Optional flags:

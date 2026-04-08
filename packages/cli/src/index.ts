@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { launchClaudeCode } from "./claude-code.js";
 import { launchOpenCode } from "./opencode.js";
 import { resolveLaunchConfig, parseACPArgs } from "./config.js";
 import { startProxyServer } from "./proxy-server.js";
@@ -21,12 +22,17 @@ function printHelp() {
 
 Usage:
   acp2openai launch opencode [options] [-- extra args]
+  acp2openai launch claude [options] [-- extra args]
+
+Supported integrations:
+  - opencode
+  - claude (alias: claude-code)
 
 Options:
   --model <name>          Model to expose via the proxy
   --host <host>           Host to bind the local proxy server
   --port <port>           Port to bind the local proxy server
-  --cwd <path>            Working directory for the ACP session
+  --cwd <path>            Working directory for the ACP session and launched client
   --acp-command <cmd>     ACP runtime command
   --acp-arg <value>       Repeatable ACP arg
   --acp-args <value>      ACP args as JSON array or space-separated string
@@ -99,12 +105,21 @@ function parseArgs(argv: string[]): ParsedArgs {
   return parsed;
 }
 
-async function runLaunch(parsed: ParsedArgs): Promise<void> {
-  if (parsed.integration !== "opencode") {
-    throw new Error(
-      `Unsupported integration: ${parsed.integration || "<empty>"}. Currently supported: opencode`,
-    );
+function normalizeIntegration(
+  integration: string | undefined,
+): "opencode" | "claude" {
+  if (integration === "opencode") return integration;
+  if (integration === "claude" || integration === "claude-code") {
+    return "claude";
   }
+
+  throw new Error(
+    `Unsupported integration: ${integration || "<empty>"}. Currently supported: opencode, claude`,
+  );
+}
+
+async function runLaunch(parsed: ParsedArgs): Promise<void> {
+  const integration = normalizeIntegration(parsed.integration);
 
   const config = resolveLaunchConfig({
     host: parsed.host,
@@ -121,13 +136,25 @@ async function runLaunch(parsed: ParsedArgs): Promise<void> {
   console.error(
     `[acp2openai-cli] ACP runtime: ${config.acpCommand} ${config.acpArgs.join(" ")}`,
   );
+  console.error(`[acp2openai-cli] Launch target: ${integration}`);
 
   const server = await startProxyServer(config);
 
   try {
-    await launchOpenCode({
+    if (integration === "opencode") {
+      await launchOpenCode({
+        baseURL: server.baseURL,
+        model: config.model,
+        cwd: config.cwd,
+        extraArgs: parsed.extraArgs,
+      });
+      return;
+    }
+
+    await launchClaudeCode({
       baseURL: server.baseURL,
       model: config.model,
+      cwd: config.cwd,
       extraArgs: parsed.extraArgs,
     });
   } finally {

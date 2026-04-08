@@ -9,6 +9,7 @@ interface FileConfig {
     command?: string;
     args?: string[];
     cwd?: string;
+    env?: Record<string, string>;
   };
 }
 
@@ -18,6 +19,7 @@ export interface LaunchConfig {
   model: string;
   acpCommand: string;
   acpArgs: string[];
+  acpEnv?: Record<string, string>;
   cwd: string;
 }
 
@@ -32,7 +34,7 @@ export interface LaunchOverrides {
 
 function loadFileConfig(): FileConfig {
   const configPath = resolve(
-    process.env.ACP2OPENAI_CONFIG || "acp2openai.config.json",
+    process.env.ACP2OPENAI_CONFIG || "examples/hono-server/acp2openai.config.json",
   );
   if (!existsSync(configPath)) return {};
 
@@ -93,6 +95,7 @@ export function resolveLaunchConfig(
     acpArgs:
       overrides.acpArgs ||
       parseACPArgs(process.env.ACP_ARGS, file.acp?.args || ["--acp"]),
+    acpEnv: file.acp?.env,
     cwd: overrides.cwd || process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
   };
 }
