@@ -36,13 +36,13 @@ npm install @yaonyan/acp2openai-compatible
 Use `defaultACPConfig` when you want the adapter instance itself to know how to start the ACP provider.
 
 ```ts
-import { Hono } from 'hono';
-import { createACP2OpenAI } from '@yaonyan/acp2openai-compatible';
+import { Hono } from "hono";
+import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
 
 const adapter = createACP2OpenAI({
-  defaultModel: 'default',
+  defaultModel: "default",
   defaultACPConfig: {
-    command: 'claude-agent-acp',
+    command: "claude-agent-acp",
     args: [],
     session: {
       cwd: process.cwd(),
@@ -53,9 +53,9 @@ const adapter = createACP2OpenAI({
 
 const app = new Hono();
 
-app.get('/v1/models', adapter.honoHandler());
-app.post('/v1/chat/completions', adapter.honoHandler());
-app.post('/v1/responses', adapter.honoHandler());
+app.get("/v1/models", adapter.honoHandler());
+app.post("/v1/chat/completions", adapter.honoHandler());
+app.post("/v1/responses", adapter.honoHandler());
 ```
 
 ### Request-level ACP config via `extra_body`
@@ -63,19 +63,19 @@ app.post('/v1/responses', adapter.honoHandler());
 Use request-level config when the caller should decide which ACP provider/session to use.
 
 ```ts
-import OpenAI from 'openai';
+import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: 'http://localhost:3000/v1',
-  apiKey: 'dummy',
+  baseURL: "http://localhost:3000/v1",
+  apiKey: "dummy",
 });
 
 const response = await client.chat.completions.create({
-  model: 'default',
-  messages: [{ role: 'user', content: 'Hello!' }],
+  model: "default",
+  messages: [{ role: "user", content: "Hello!" }],
   extra_body: {
     acpConfig: {
-      command: 'claude-agent-acp',
+      command: "claude-agent-acp",
       args: [],
       session: {
         cwd: process.cwd(),
@@ -110,6 +110,8 @@ From the repo root:
 npm run example:hono
 npm run example:express
 ```
+
+For the shortest Hono startup guide, see `examples/hono-server/README.md`.
 
 ### Local config file for the Hono example
 
