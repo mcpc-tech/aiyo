@@ -4,7 +4,14 @@ import {
   createACPProvider,
   type ACPProviderSettings,
 } from "@mcpc-tech/acp-ai-provider";
-import { generateText, streamText, Output, type ModelMessage, tool, jsonSchema } from "ai";
+import {
+  generateText,
+  streamText,
+  Output,
+  type ModelMessage,
+  tool,
+  jsonSchema,
+} from "ai";
 import { z } from "zod/v4";
 import type {
   ChatCompletion,
@@ -37,10 +44,7 @@ export interface OpenAIExtraBody {
   seed?: number;
 }
 
-export type ACP2OpenAIEndpoint =
-  | "chat.completions"
-  | "responses"
-  | "messages";
+export type ACP2OpenAIEndpoint = "chat.completions" | "responses" | "messages";
 export type ACP2OpenAICallType = "generateText" | "streamText";
 export type ACP2OpenAIToolChoiceValue =
   | "auto"
@@ -88,10 +92,7 @@ export type ACP2ListModelsResolver =
   | (() => string[] | Promise<string[]>)
   | string[];
 
-export type ACP2OpenAIResultEventType =
-  | "text-delta"
-  | "tool-calls"
-  | "finish";
+export type ACP2OpenAIResultEventType = "text-delta" | "tool-calls" | "finish";
 
 export interface ACP2OpenAIResultMutation {
   eventType: ACP2OpenAIResultEventType;
@@ -569,7 +570,10 @@ ${toolList}
       params.toolChoice.type === "tool"
     ) {
       forcedToolName = params.toolChoice.toolName;
-    } else if (params.toolChoice === "required" && allowedToolNames.size === 1) {
+    } else if (
+      params.toolChoice === "required" &&
+      allowedToolNames.size === 1
+    ) {
       forcedToolName = Array.from(allowedToolNames)[0];
     }
 
@@ -658,15 +662,14 @@ ${toolList}
   ): Promise<ACP2OpenAIFinalResult> {
     const nestedInvocation = await this.prepareChatInvocation({
       endpoint: invocation.endpoint,
-      callType: options?.callType ?? "generateText",
+      callType: options?.callType ?? "streamText",
       originalRequest: request,
       request,
     });
 
-    return this.runPreparedModelResult(
-      nestedInvocation,
-      options?.skipPlugins !== true,
-    );
+    // Always use streamText path so tools are forwarded correctly
+    const { result } = await this.collectPreparedStreamResult(nestedInvocation);
+    return result;
   }
 
   private async applyResultHandlers(
@@ -724,7 +727,10 @@ ${toolList}
       const result = await generateText(invocation.params);
       let finalResult: ACP2OpenAIFinalResult = {
         text: result.text ?? null,
-        toolCalls: this.pickToolCalls(result.toolCalls, invocation.toolSelection),
+        toolCalls: this.pickToolCalls(
+          result.toolCalls,
+          invocation.toolSelection,
+        ),
         finishReason: result.finishReason,
         usage: {
           inputTokens: result.usage?.inputTokens ?? 0,
@@ -734,7 +740,8 @@ ${toolList}
       };
 
       if (applyPlugins) {
-        finalResult = (await this.applyResultHandlers(invocation, finalResult)).result;
+        finalResult = (await this.applyResultHandlers(invocation, finalResult))
+          .result;
       }
 
       return finalResult;
@@ -1113,7 +1120,9 @@ ${toolList}
     };
   }
 
-  private coerceOpenAIToolCalls(toolCalls: unknown): OpenAIToolCall[] | undefined {
+  private coerceOpenAIToolCalls(
+    toolCalls: unknown,
+  ): OpenAIToolCall[] | undefined {
     if (!Array.isArray(toolCalls) || toolCalls.length === 0) return undefined;
 
     const direct = toolCalls.filter(
@@ -1516,7 +1525,9 @@ ${toolList}
     try {
       const sessionInfo = await provider.initSession();
       return [
-        ...(sessionInfo.models?.availableModels ?? []).map((model) => model.modelId),
+        ...(sessionInfo.models?.availableModels ?? []).map(
+          (model) => model.modelId,
+        ),
         sessionInfo.models?.currentModelId,
         this.config.defaultModel,
         "default",
@@ -1528,7 +1539,9 @@ ${toolList}
 
   private async handleModelsList(): Promise<OpenAIModelListResponse> {
     const created = Math.floor(Date.now() / 1000);
-    const modelIds = Array.from(new Set(await this.resolveConfiguredModelIds()));
+    const modelIds = Array.from(
+      new Set(await this.resolveConfiguredModelIds()),
+    );
 
     return {
       object: "list",
@@ -1690,14 +1703,24 @@ ${toolList}
       typeof msg.content === "string"
         ? msg.content
         : JSON.stringify(msg.content);
+
+    // Try to parse as JSON for structured output
+    let output: any;
+    try {
+      const parsed = JSON.parse(content);
+      output = { type: "json", value: parsed };
+    } catch {
+      output = { type: "text", value: content };
+    }
+
     return {
       role: "tool",
       content: [
         {
           type: "tool-result",
           toolCallId: msg.tool_call_id,
-          toolName: "tool",
-          output: content,
+          toolName: msg.name ?? "tool",
+          output,
         },
       ],
     };
@@ -2075,7 +2098,10 @@ ${toolList}
 
       const awaited = result;
       const rawToolCalls = await this.resolveMaybePromise(awaited.toolCalls);
-      let selectedToolCalls = this.pickToolCalls(rawToolCalls, invocation.toolSelection);
+      let selectedToolCalls = this.pickToolCalls(
+        rawToolCalls,
+        invocation.toolSelection,
+      );
       const mutatedToolCalls = await this.mutateStreamResult(invocation, {
         eventType: "tool-calls",
         toolCalls: selectedToolCalls,
@@ -2089,7 +2115,9 @@ ${toolList}
         eventType: "finish",
         finishReason: finishReasonValue,
       });
-      const usage = await this.resolveMaybePromise((awaited as { usage?: any }).usage);
+      const usage = await this.resolveMaybePromise(
+        (awaited as { usage?: any }).usage,
+      );
 
       return {
         textDeltas,
@@ -2104,6 +2132,25 @@ ${toolList}
           },
         })),
       };
+    } catch (err: any) {
+      // If the model produced no output (e.g. during a PTC resume with dummy
+      // messages), still let result-handler plugins run so they can override.
+      if (
+        err?.name === "AI_NoOutputGeneratedError" ||
+        err?.constructor?.name === "NoOutputGeneratedError"
+      ) {
+        const emptyResult: ACP2OpenAIFinalResult = {
+          text: null,
+          toolCalls: [],
+          finishReason: "other",
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        };
+        const handled = await this.applyResultHandlers(invocation, emptyResult);
+        if (handled.overridden) {
+          return { textDeltas: [], ...handled };
+        }
+      }
+      throw err;
     } finally {
       await this.cleanupRuntime(invocation.runtime);
     }
@@ -2248,7 +2295,10 @@ ${toolList}
 
       const awaited = result;
       const rawToolCalls = await this.resolveMaybePromise(awaited.toolCalls);
-      let selectedToolCalls = this.pickToolCalls(rawToolCalls, invocation.toolSelection);
+      let selectedToolCalls = this.pickToolCalls(
+        rawToolCalls,
+        invocation.toolSelection,
+      );
       const mutatedToolCalls = await this.mutateStreamResult(invocation, {
         eventType: "tool-calls",
         toolCalls: selectedToolCalls,
@@ -2399,7 +2449,9 @@ ${toolList}
     let fullText = "";
     let toolCalls: OpenAIToolCall[] = [];
 
-    for await (const chunk of this.runPreparedChatCompletionStream(invocation)) {
+    for await (const chunk of this.runPreparedChatCompletionStream(
+      invocation,
+    )) {
       const parsed = this.parseSSEDataChunk(chunk);
       if (!parsed) continue;
 
@@ -2596,7 +2648,8 @@ ${toolList}
       originalRequest: req,
       request: chatReq,
     });
-    const modelName = invocation.runtime.modelName || chatReq.model || "default";
+    const modelName =
+      invocation.runtime.modelName || chatReq.model || "default";
 
     if (this.hasResultHandlers()) {
       const buffered = await this.collectPreparedStreamResult(invocation);
@@ -2779,7 +2832,9 @@ ${toolList}
 
       if (body.stream) {
         return new Response(
-          this.createSSEReadableStream(this.handleAnthropicMessagesStream(body)),
+          this.createSSEReadableStream(
+            this.handleAnthropicMessagesStream(body),
+          ),
           {
             headers: SSE_HEADERS,
           },
@@ -2872,7 +2927,9 @@ ${toolList}
         const response = isResponses
           ? await this.handleResponses(body as OpenAIResponsesRequest)
           : isAnthropic
-            ? await this.handleAnthropicMessages(body as AnthropicMessagesRequest)
+            ? await this.handleAnthropicMessages(
+                body as AnthropicMessagesRequest,
+              )
             : await this.handleChatCompletion(
                 body as OpenAIChatCompletionRequest,
               );
@@ -2929,7 +2986,9 @@ ${toolList}
         ? await this.handleResponses(body as OpenAIResponsesRequest)
         : isAnthropic
           ? await this.handleAnthropicMessages(body as AnthropicMessagesRequest)
-          : await this.handleChatCompletion(body as OpenAIChatCompletionRequest);
+          : await this.handleChatCompletion(
+              body as OpenAIChatCompletionRequest,
+            );
       return c.json(response);
     };
   }

@@ -17,8 +17,7 @@ export interface ProgrammaticToolLoopMatchContext {
   result: ACP2OpenAIFinalResult;
 }
 
-export interface ProgrammaticToolLoopExecuteContext
-  extends ProgrammaticToolLoopMatchContext {
+export interface ProgrammaticToolLoopExecuteContext extends ProgrammaticToolLoopMatchContext {
   toolCall: ProgrammaticToolLoopToolCall;
 }
 
@@ -66,8 +65,7 @@ export interface JavaScriptProgrammaticToolCallRecord {
   output: unknown;
 }
 
-export interface JavaScriptProgrammaticToolHandlerContext
-  extends ProgrammaticToolLoopExecuteContext {
+export interface JavaScriptProgrammaticToolHandlerContext extends ProgrammaticToolLoopExecuteContext {
   args: Record<string, unknown>;
   logs: string[];
   toolHistory: JavaScriptProgrammaticToolCallRecord[];
@@ -107,6 +105,9 @@ export interface CodeExecutionSession {
   executionToolCallId?: string;
   modelRequestMessages?: OpenAIChatCompletionRequest["messages"];
   assistantToolCallMessage?: OpenAIChatCompletionRequest["messages"][number];
+  /** Resolves when state changes from "running" to something else. */
+  stateChangeNotify?: () => void;
+  stateChangePromise?: Promise<void>;
 }
 
 export interface JavaScriptCodeExecutionPluginConfig {
@@ -117,9 +118,7 @@ export interface JavaScriptCodeExecutionPluginConfig {
     context: ProgrammaticToolLoopMatchContext,
   ) => boolean;
   /** Extract JS source from tool call input. Default: input.code / input.javascript / input.js */
-  getCode?: (
-    toolCall: ProgrammaticToolLoopToolCall,
-  ) => string | undefined;
+  getCode?: (toolCall: ProgrammaticToolLoopToolCall) => string | undefined;
   /** Names of the tools that the JS code is allowed to call (these are the real OpenAI tools). */
   toolNames: string[];
   /**
@@ -149,9 +148,7 @@ export interface JavaScriptCodeExecutionPluginConfig {
   /** Maps the final execution result before it's sent back to the model as tool_result. */
   mapExecutionResult?: (
     result: JavaScriptProgrammaticExecutionResult,
-  ) =>
-    | Promise<unknown>
-    | unknown;
+  ) => Promise<unknown> | unknown;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -249,8 +246,8 @@ function toAssistantToolCallMessage(
 ): OpenAIChatCompletionRequest["messages"][number] | undefined {
   const normalizedToolCalls = (result.toolCalls ?? [])
     .map((toolCall) => normalizeToolCall(toolCall))
-    .filter(
-      (toolCall): toolCall is ProgrammaticToolLoopToolCall => Boolean(toolCall),
+    .filter((toolCall): toolCall is ProgrammaticToolLoopToolCall =>
+      Boolean(toolCall),
     );
 
   if (normalizedToolCalls.length === 0) {
@@ -290,9 +287,9 @@ function setResumeSessionId(
 function getResumeSessionId(
   request: OpenAIChatCompletionRequest,
 ): string | undefined {
-  const value = (request as OpenAIChatCompletionRequest & Record<string, unknown>)[
-    RESUME_SESSION_ID_FIELD
-  ];
+  const value = (
+    request as OpenAIChatCompletionRequest & Record<string, unknown>
+  )[RESUME_SESSION_ID_FIELD];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
@@ -357,9 +354,8 @@ export function createProgrammaticToolLoopPlugin(
       for (let iteration = 0; iteration < maxIterations; iteration++) {
         const matchedToolCall = (currentResult.toolCalls ?? [])
           .map((toolCall) => normalizeToolCall(toolCall))
-          .filter(
-            (toolCall): toolCall is ProgrammaticToolLoopToolCall =>
-              Boolean(toolCall),
+          .filter((toolCall): toolCall is ProgrammaticToolLoopToolCall =>
+            Boolean(toolCall),
           )
           .find((toolCall) =>
             match(toolCall, {
@@ -446,19 +442,36 @@ function buildToolSchemaBlock(tool: OpenAIToolDefinition): string {
     ? JSON.stringify(fn.parameters, null, 2)
     : "{}";
 
+  const required = Array.isArray(fn.parameters?.required)
+    ? fn.parameters.required
+    : [];
+  const props = isRecord(fn.parameters?.properties)
+    ? fn.parameters!.properties
+    : {};
+  const paramLines = Object.entries(props).map(([key, schema]) => {
+    const s = isRecord(schema) ? schema : {};
+    const req = required.includes(key) ? " (required)" : " (optional)";
+    const desc = typeof s.description === "string" ? ` — ${s.description}` : "";
+    return `  - ${key}: ${s.type ?? "any"}${req}${desc}`;
+  });
+
   return [
-    `### tools.${fn.name}(args)`,
-    fn.description ? `\n${fn.description}\n` : "",
-    `\`\`\`json\n${paramsJson}\n\`\`\``,
-    `\nUsage: \`const result = await tools.${fn.name}(${buildExampleArgs(fn.parameters)});\``,
+    `<tool name="${fn.name}">`,
+    fn.description ? `<description>${fn.description}</description>` : "",
+    `<parameters>`,
+    `${paramsJson}`,
+    `</parameters>`,
+    paramLines.length > 0
+      ? `<param_summary>\n${paramLines.join("\n")}\n</param_summary>`
+      : "",
+    `<usage>const result = await tools.${fn.name}(${buildExampleArgs(fn.parameters)});</usage>`,
+    `</tool>`,
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function buildExampleArgs(
-  parameters?: Record<string, unknown>,
-): string {
+function buildExampleArgs(parameters?: Record<string, unknown>): string {
   if (!parameters) return "{}";
   const props = parameters.properties;
   if (!isRecord(props) || Object.keys(props).length === 0) return "{}";
@@ -499,41 +512,35 @@ export function buildCodeExecutionSystemPrompt(
     .map((t) => buildToolSchemaBlock(t))
     .join("\n\n");
 
-  return `## Programmatic Tool Calling
+  return `<programmatic_tool_calling>
+<overview>
+You write JavaScript code to call tools programmatically via the \`${codeExecutionToolName}\` tool.
+Call \`${codeExecutionToolName}\` with a \`code\` field containing your JavaScript.
+</overview>
 
-You have access to a \`${codeExecutionToolName}\` tool. Instead of calling tools directly, you write JavaScript code that calls them programmatically.
+<instructions>
+- Call tools with \`await tools.<name>(args)\`. Always await.
+- Use \`return <value>\` to produce a final structured result.
+- Use \`console.log()\` for debug output (captured, not returned to user).
+- You may use loops, conditionals, variables, try/catch.
+- Sandboxed: no \`require\`, \`import\`, or network access.
+- Tool args must be plain JSON-serializable objects.
+- For multiple independent tool calls, use sequential awaits (not Promise.all).
+</instructions>
 
-### How it works
-
-1. Call the \`${codeExecutionToolName}\` tool with a \`code\` field containing JavaScript.
-2. Inside the code, call tools using \`await tools.<tool_name>(args)\`.
-3. Each tool call suspends execution until the result is available.
-4. Use \`return <value>\` to produce a final result.
-
-### Rules
-
-- Always \`await\` tool calls: \`const result = await tools.read_file({ path: "/tmp/test.txt" });\`
-- You can call multiple tools, use loops, conditionals, and variables.
-- Use \`console.log(...)\` for debug output (captured but not returned to the user).
-- Use \`return <value>\` at the end to produce a structured result.
-- The code runs in a sandboxed environment. No \`require\`, \`import\`, or network access.
-- Tool arguments must be plain objects with JSON-serializable values.
-
-### Available tools
-
+<available_tools>
 ${toolSchemas}
+</available_tools>
 
-### Example
-
-\`\`\`javascript
-// Read a file, process it, write the result
-const data = await tools.read_file({ path: "/tmp/input.txt" });
-const lines = data.split("\\n");
-const summary = \`File has \${lines.length} lines\`;
-await tools.write_file({ path: "/tmp/summary.txt", content: summary });
-return { summary, lineCount: lines.length };
-\`\`\`
-`;
+<example>
+<user_request>How many rockets launched in 2025 and what's the weather in Tokyo?</user_request>
+<code>
+const launches = await tools.get_launch_count({ year: 2025 });
+const weather = await tools.get_weather({ city: "Tokyo", country: "Japan" });
+return { launches, weather };
+</code>
+</example>
+</programmatic_tool_calling>`;
 }
 
 /**
@@ -647,7 +654,10 @@ export function createJavaScriptCodeExecutionPlugin(
     ];
 
     // 4. Adjust tool_choice if it was forcing one of the real tools
-    if (ctx.request.tool_choice && typeof ctx.request.tool_choice === "object") {
+    if (
+      ctx.request.tool_choice &&
+      typeof ctx.request.tool_choice === "object"
+    ) {
       const tc = ctx.request.tool_choice as any;
       if (tc.type === "function" && tc.function?.name) {
         if (toolNamesSet.has(tc.function.name)) {
@@ -681,7 +691,46 @@ export function createJavaScriptCodeExecutionPlugin(
 
     // Build sandbox tools — each returns a Promise that blocks until
     // the external agent supplies a tool_result via a new HTTP request.
-    const sandboxTools: Record<string, (args: unknown) => Promise<unknown>> = {};
+    const sandboxTools: Record<string, (args: unknown) => Promise<unknown>> =
+      {};
+
+    // Queue for concurrent tool calls (e.g. from Promise.all)
+    const pendingQueue: Array<{
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      resolve: (value: unknown) => void;
+    }> = [];
+
+    function drainNextPending() {
+      if (session.pendingToolCall || pendingQueue.length === 0) return;
+      const next = pendingQueue.shift()!;
+      session.state = "waiting_for_tool_result";
+      session.pendingToolCall = {
+        toolCallId: next.toolCallId,
+        toolName: next.toolName,
+        args: next.args,
+      };
+      session.resolve = (value: unknown) => {
+        toolHistory.push({
+          toolName: next.toolName,
+          args: cloneValue(next.args),
+          output: cloneValueIfPossible(value),
+        });
+        session.pendingToolCall = undefined;
+        session.resolve = undefined;
+        session.state = "running";
+        next.resolve(value);
+        // Drain next pending if any
+        drainNextPending();
+      };
+      // Notify waiters that state changed
+      if (session.stateChangeNotify) {
+        session.stateChangeNotify();
+      } else {
+        session.stateChangePromise = Promise.resolve();
+      }
+    }
 
     for (const toolName of config.toolNames) {
       sandboxTools[toolName] = (args: unknown) => {
@@ -689,23 +738,13 @@ export function createJavaScriptCodeExecutionPlugin(
         const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         return new Promise<unknown>((resolve) => {
-          session.state = "waiting_for_tool_result";
-          session.pendingToolCall = {
+          pendingQueue.push({
             toolCallId,
             toolName,
             args: cloneValue(normalizedArgs),
-          };
-          session.resolve = (value: unknown) => {
-            toolHistory.push({
-              toolName,
-              args: cloneValue(normalizedArgs),
-              output: cloneValueIfPossible(value),
-            });
-            session.pendingToolCall = undefined;
-            session.resolve = undefined;
-            session.state = "running";
-            resolve(value);
-          };
+            resolve,
+          });
+          drainNextPending();
         });
       };
     }
@@ -766,22 +805,35 @@ export function createJavaScriptCodeExecutionPlugin(
   async function waitForSuspendOrComplete(
     session: CodeExecutionSession,
   ): Promise<CodeExecutionSession> {
-    // The sandbox is async; we race between:
-    //  - the sandbox blocking on a tool call (state becomes "waiting_for_tool_result")
-    //  - the sandbox completing entirely
-    const deadline = Date.now() + timeoutMs;
+    // If already in a terminal or suspended state, return immediately.
+    if (session.state !== "running") return session;
 
-    while (session.state === "running") {
-      if (Date.now() > deadline) {
-        session.state = "error";
-        session.error = new Error(
-          `Code execution timed out after ${timeoutMs}ms`,
-        );
-        throw session.error;
-      }
+    // Use the existing stateChangePromise if the sandbox already changed state
+    // before we got here (stateChangeNotify was called before we started waiting).
+    // If stateChangePromise is already resolved, Promise.race returns immediately.
+    const timeoutPromise = new Promise<"timeout">((resolve) =>
+      setTimeout(() => resolve("timeout"), timeoutMs),
+    );
 
-      // Yield to the event loop so the sandbox async code can progress.
-      await new Promise<void>((r) => setTimeout(r, 5));
+    const winner = await Promise.race([
+      session.completionPromise.then(
+        () => "completed" as const,
+        () => "errored" as const,
+      ),
+      session.stateChangePromise ??
+        new Promise<"suspended">((resolve) => {
+          session.stateChangeNotify = () => resolve("suspended");
+          session.stateChangePromise = undefined; // will be recreated if needed
+        }),
+      timeoutPromise,
+    ]);
+
+    if (winner === "timeout" && session.state === "running") {
+      session.state = "error";
+      session.error = new Error(
+        `Code execution timed out after ${timeoutMs}ms`,
+      );
+      throw session.error;
     }
 
     return session;
@@ -855,6 +907,11 @@ export function createJavaScriptCodeExecutionPlugin(
         const session = sessions.get(resumeExecutionId);
         if (!session) return;
 
+        // Yield multiple times to let sandbox's async continuation run.
+        // The sandbox needs microtask processing after resolve().
+        for (let i = 0; i < 10 && session.state === "running"; i++) {
+          await new Promise<void>((r) => setImmediate(r));
+        }
         await waitForSuspendOrComplete(session);
 
         if (session.state === "waiting_for_tool_result") {
@@ -925,9 +982,7 @@ export function createJavaScriptCodeExecutionPlugin(
       const result = ctx.result;
       const toolCalls = (result.toolCalls ?? [])
         .map((tc) => normalizeToolCall(tc))
-        .filter(
-          (tc): tc is ProgrammaticToolLoopToolCall => Boolean(tc),
-        );
+        .filter((tc): tc is ProgrammaticToolLoopToolCall => Boolean(tc));
 
       if (toolCalls.length === 0) return;
 
@@ -951,6 +1006,7 @@ export function createJavaScriptCodeExecutionPlugin(
       session.assistantToolCallMessage = toAssistantToolCallMessage(result);
 
       // Wait for the sandbox to either suspend (needs a tool) or complete.
+      await new Promise<void>((r) => setImmediate(r));
       await waitForSuspendOrComplete(session);
 
       if (session.state === "waiting_for_tool_result") {
