@@ -4,7 +4,7 @@ import {
   createACPProvider,
   type ACPProviderSettings,
 } from "@mcpc-tech/acp-ai-provider";
-import { generateText, streamText, Output, type ModelMessage, tool } from "ai";
+import { generateText, streamText, Output, type ModelMessage, tool, jsonSchema } from "ai";
 import { z } from "zod/v4";
 import type {
   ChatCompletion,
@@ -98,6 +98,52 @@ export interface ACP2OpenAIResultMutation {
   textDelta?: string;
   toolCalls?: any[];
   finishReason?: string;
+}
+
+export interface ACP2OpenAIUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+export interface ACP2OpenAIFinalResult {
+  text?: string | null;
+  toolCalls?: any[];
+  finishReason?: string;
+  usage?: ACP2OpenAIUsage;
+}
+
+export interface ACP2OpenAIRunModelOptions {
+  callType?: ACP2OpenAICallType;
+  skipPlugins?: boolean;
+}
+
+export interface ACP2OpenAIResultHandlerContext {
+  endpoint: ACP2OpenAIEndpoint;
+  callType: ACP2OpenAICallType;
+  stream: boolean;
+  originalRequest:
+    | OpenAIChatCompletionRequest
+    | OpenAIResponsesRequest
+    | AnthropicMessagesRequest;
+  request: OpenAIChatCompletionRequest;
+  params: ACP2OpenAIModelCallParams;
+  result: ACP2OpenAIFinalResult;
+  overrideResult?: ACP2OpenAIFinalResult;
+  runModel: (
+    request: OpenAIChatCompletionRequest,
+    options?: ACP2OpenAIRunModelOptions,
+  ) => Promise<ACP2OpenAIFinalResult>;
+}
+
+export type ACP2OpenAIResultHandler = (
+  context: ACP2OpenAIResultHandlerContext,
+) => void | Promise<void>;
+
+export interface ACP2OpenAIPlugin {
+  name?: string;
+  middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[];
+  onResult?: ACP2OpenAIResultHandler | ACP2OpenAIResultHandler[];
 }
 
 export interface ACP2OpenAIMiddlewareContext {
@@ -331,6 +377,7 @@ export interface ACP2OpenAIConfig {
   defaultACPConfig?: ACPProviderSettings;
   defaultModel?: string;
   middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[];
+  plugins?: ACP2OpenAIPlugin | ACP2OpenAIPlugin[];
   runtimeFactory?: ACP2RuntimeFactory;
   listModels?: ACP2ListModelsResolver;
 }
@@ -344,6 +391,7 @@ const SSE_HEADERS = {
   "Cache-Control": "no-cache",
   Connection: "keep-alive",
 } as const;
+const REQUEST_TOOL_PRIORITY_PROMPT_MARKER = "## Request-scoped MCP tools";
 
 type OpenAIFinishReason =
   | "stop"
@@ -389,11 +437,41 @@ export class ACP2OpenAI {
     this.config = config;
   }
 
+  private getPlugins(): ACP2OpenAIPlugin[] {
+    if (!this.config.plugins) return [];
+    return Array.isArray(this.config.plugins)
+      ? this.config.plugins
+      : [this.config.plugins];
+  }
+
   private getMiddlewares(): ACP2OpenAIMiddleware[] {
-    if (!this.config.middleware) return [];
-    return Array.isArray(this.config.middleware)
-      ? this.config.middleware
-      : [this.config.middleware];
+    const configured = !this.config.middleware
+      ? []
+      : Array.isArray(this.config.middleware)
+        ? this.config.middleware
+        : [this.config.middleware];
+
+    const fromPlugins = this.getPlugins().flatMap((plugin) => {
+      if (!plugin.middleware) return [];
+      return Array.isArray(plugin.middleware)
+        ? plugin.middleware
+        : [plugin.middleware];
+    });
+
+    return [...configured, ...fromPlugins];
+  }
+
+  private getResultHandlers(): ACP2OpenAIResultHandler[] {
+    return this.getPlugins().flatMap((plugin) => {
+      if (!plugin.onResult) return [];
+      return Array.isArray(plugin.onResult)
+        ? plugin.onResult
+        : [plugin.onResult];
+    });
+  }
+
+  private hasResultHandlers(): boolean {
+    return this.getResultHandlers().length > 0;
   }
 
   private cloneRequest<T>(value: T): T {
@@ -423,6 +501,60 @@ export class ACP2OpenAI {
       tools: runtime.tools,
       toolChoice: runtime.toolChoice,
     };
+  }
+
+  private injectRequestToolPriorityPrompt(
+    req: OpenAIChatCompletionRequest,
+  ): void {
+    const prompt = this.buildRequestToolPriorityPrompt(req.tools);
+    if (!prompt || this.hasRequestToolPriorityPrompt(req.messages)) {
+      return;
+    }
+
+    const firstMessage = req.messages[0];
+    if (
+      firstMessage &&
+      (firstMessage.role === "system" || firstMessage.role === "developer") &&
+      typeof firstMessage.content === "string"
+    ) {
+      firstMessage.content = `${firstMessage.content}\n\n${prompt}`;
+      return;
+    }
+
+    req.messages = [{ role: "system", content: prompt }, ...req.messages];
+  }
+
+  private buildRequestToolPriorityPrompt(
+    openaiTools?: OpenAITool[],
+  ): string | undefined {
+    const toolNames = Array.from(this.getAllowedToolNames(openaiTools));
+    if (toolNames.length === 0) return undefined;
+
+    const toolList = toolNames.map((name) => `- \`${name}\``).join("\n");
+
+    return `${REQUEST_TOOL_PRIORITY_PROMPT_MARKER}
+
+<available_tools>
+The following request-scoped MCP tools are available for this request. Note: These tools may be prefixed with the MCP server name (e.g., "mcp__acp-ai-sdk-tools__tool_name"):
+${toolList}
+</available_tools>
+
+<tool_selection_priority>
+1. <priority>ALWAYS use tools from <available_tools> above when they can solve the task.</priority>
+2. <priority>DO NOT use built-in or provider tools when a suitable tool exists in <available_tools>.</priority>
+3. <priority>When calling a tool, use the EXACT name as listed in <available_tools>, including any provider prefix.</priority>
+</tool_selection_priority>`;
+  }
+
+  private hasRequestToolPriorityPrompt(
+    messages: ChatCompletionMessageParam[],
+  ): boolean {
+    return messages.some(
+      (message) =>
+        (message.role === "system" || message.role === "developer") &&
+        typeof message.content === "string" &&
+        message.content.includes(REQUEST_TOOL_PRIORITY_PROMPT_MARKER),
+    );
   }
 
   private buildToolSelectionFromParams(
@@ -473,6 +605,8 @@ export class ACP2OpenAI {
       request: mutableRequest,
     });
 
+    this.injectRequestToolPriorityPrompt(mutableRequest);
+
     const runtime = await this.buildRuntime(mutableRequest, endpoint, callType);
     const params = this.buildModelCallParams(mutableRequest, runtime);
 
@@ -515,6 +649,98 @@ export class ACP2OpenAI {
     });
 
     return mutableResult;
+  }
+
+  private async runModelFromResultHandler(
+    invocation: PreparedChatInvocation,
+    request: OpenAIChatCompletionRequest,
+    options?: ACP2OpenAIRunModelOptions,
+  ): Promise<ACP2OpenAIFinalResult> {
+    const nestedInvocation = await this.prepareChatInvocation({
+      endpoint: invocation.endpoint,
+      callType: options?.callType ?? "generateText",
+      originalRequest: request,
+      request,
+    });
+
+    return this.runPreparedModelResult(
+      nestedInvocation,
+      options?.skipPlugins !== true,
+    );
+  }
+
+  private async applyResultHandlers(
+    invocation: PreparedChatInvocation,
+    result: ACP2OpenAIFinalResult,
+  ): Promise<{ result: ACP2OpenAIFinalResult; overridden: boolean }> {
+    if (!this.hasResultHandlers()) {
+      return {
+        result: this.cloneRequest(result),
+        overridden: false,
+      };
+    }
+
+    let mutableResult = this.cloneRequest(result);
+    let overridden = false;
+
+    for (const handler of this.getResultHandlers()) {
+      const context: ACP2OpenAIResultHandlerContext = {
+        endpoint: invocation.endpoint,
+        callType: invocation.callType,
+        stream: invocation.callType === "streamText",
+        originalRequest: invocation.originalRequest,
+        request: this.cloneRequest(invocation.request),
+        params: {
+          ...invocation.params,
+          messages: this.cloneRequest(invocation.params.messages),
+        },
+        result: mutableResult,
+        runModel: async (request, options) =>
+          await this.runModelFromResultHandler(invocation, request, options),
+      };
+
+      await handler(context);
+
+      if (context.overrideResult) {
+        mutableResult = this.cloneRequest(context.overrideResult);
+        overridden = true;
+        continue;
+      }
+
+      mutableResult = this.cloneRequest(context.result);
+    }
+
+    return {
+      result: mutableResult,
+      overridden,
+    };
+  }
+
+  private async runPreparedModelResult(
+    invocation: PreparedChatInvocation,
+    applyPlugins = true,
+  ): Promise<ACP2OpenAIFinalResult> {
+    try {
+      const result = await generateText(invocation.params);
+      let finalResult: ACP2OpenAIFinalResult = {
+        text: result.text ?? null,
+        toolCalls: this.pickToolCalls(result.toolCalls, invocation.toolSelection),
+        finishReason: result.finishReason,
+        usage: {
+          inputTokens: result.usage?.inputTokens ?? 0,
+          outputTokens: result.usage?.outputTokens ?? 0,
+          totalTokens: result.usage?.totalTokens ?? 0,
+        },
+      };
+
+      if (applyPlugins) {
+        finalResult = (await this.applyResultHandlers(invocation, finalResult)).result;
+      }
+
+      return finalResult;
+    } finally {
+      await this.cleanupRuntime(invocation.runtime);
+    }
   }
 
   private ensureACPConfig(
@@ -1556,11 +1782,14 @@ export class ACP2OpenAI {
       if (openaiTool.type !== "function") continue;
 
       const fn = openaiTool.function;
-      const zodSchema = z.object({}).passthrough();
+      // Use the original JSON Schema parameters if available, otherwise allow any object
+      const inputSchema = fn.parameters
+        ? jsonSchema(fn.parameters as any)
+        : z.object({}).passthrough();
 
       tools[fn.name] = tool({
         description: fn.description || `Function: ${fn.name}`,
-        inputSchema: zodSchema,
+        inputSchema,
       });
     }
 
@@ -1700,8 +1929,12 @@ export class ACP2OpenAI {
     finishReason: string | undefined,
     toolCalls: OpenAIToolCall[] | undefined,
   ): OpenAIFinishReason {
+    if (toolCalls && toolCalls.length > 0) {
+      return "tool_calls";
+    }
+
     const mapped = this.mapFinishReason(finishReason);
-    if (mapped === "tool_calls" && (!toolCalls || toolCalls.length === 0)) {
+    if (mapped === "tool_calls") {
       return "stop";
     }
     return mapped;
@@ -1711,8 +1944,12 @@ export class ACP2OpenAI {
     finishReason: string | undefined,
     toolCalls: any[] | undefined,
   ): OpenAIFinishReason | null {
+    if (toolCalls && toolCalls.length > 0) {
+      return "tool_calls";
+    }
+
     const mapped = this.mapStreamFinishReason(finishReason);
-    if (mapped === "tool_calls" && (!toolCalls || toolCalls.length === 0)) {
+    if (mapped === "tool_calls") {
       return "stop";
     }
     return mapped;
@@ -1767,57 +2004,213 @@ export class ACP2OpenAI {
     return await value;
   }
 
+  private toChatCompletionResponse(
+    invocation: PreparedChatInvocation,
+    result: ACP2OpenAIFinalResult,
+  ): OpenAIChatCompletionResponse {
+    const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
+    const created = Math.floor(Date.now() / 1000);
+    const openAIToolCalls = this.toOpenAIToolCalls(result.toolCalls);
+
+    return {
+      id,
+      object: "chat.completion",
+      created,
+      model: invocation.runtime.modelName,
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: result.text || null,
+            refusal: null,
+            tool_calls: openAIToolCalls,
+          },
+          finish_reason: this.resolveNonStreamFinishReason(
+            result.finishReason,
+            openAIToolCalls,
+          ),
+          logprobs: null,
+        },
+      ],
+      usage: {
+        prompt_tokens: result.usage?.inputTokens ?? 0,
+        completion_tokens: result.usage?.outputTokens ?? 0,
+        total_tokens: result.usage?.totalTokens ?? 0,
+      },
+      service_tier: null,
+    };
+  }
+
   private async runPreparedChatCompletion(
     invocation: PreparedChatInvocation,
   ): Promise<OpenAIChatCompletionResponse> {
-    try {
-      const result = await generateText(invocation.params);
+    // Always use streamText path so ACP provider receives tools via doStream
+    // (doGenerate does not forward tools to the ACP session).
+    const { result } = await this.collectPreparedStreamResult(invocation);
+    return this.toChatCompletionResponse(invocation, result);
+  }
 
-      const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
-      const created = Math.floor(Date.now() / 1000);
-      const rawToolCalls = result.toolCalls;
-      const selectedToolCalls = this.pickToolCalls(
-        rawToolCalls,
-        invocation.toolSelection,
+  private async collectPreparedStreamResult(
+    invocation: PreparedChatInvocation,
+  ): Promise<{
+    result: ACP2OpenAIFinalResult;
+    textDeltas: string[];
+    overridden: boolean;
+  }> {
+    const result = streamText(invocation.params);
+
+    try {
+      const textDeltas: string[] = [];
+
+      for await (const chunk of result.textStream) {
+        const mutated = await this.mutateStreamResult(invocation, {
+          eventType: "text-delta",
+          textDelta: chunk,
+        });
+        const textDelta = mutated.textDelta ?? "";
+        if (textDelta.length === 0) continue;
+        textDeltas.push(textDelta);
+      }
+
+      const awaited = result;
+      const rawToolCalls = await this.resolveMaybePromise(awaited.toolCalls);
+      let selectedToolCalls = this.pickToolCalls(rawToolCalls, invocation.toolSelection);
+      const mutatedToolCalls = await this.mutateStreamResult(invocation, {
+        eventType: "tool-calls",
+        toolCalls: selectedToolCalls,
+      });
+      selectedToolCalls = mutatedToolCalls.toolCalls;
+
+      const finishReasonValue = await this.resolveMaybePromise(
+        awaited.finishReason,
       );
-      const openAIToolCalls = this.toOpenAIToolCalls(selectedToolCalls);
+      const mutatedFinish = await this.mutateStreamResult(invocation, {
+        eventType: "finish",
+        finishReason: finishReasonValue,
+      });
+      const usage = await this.resolveMaybePromise((awaited as { usage?: any }).usage);
 
       return {
-        id,
-        object: "chat.completion",
-        created,
-        model: invocation.runtime.modelName,
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: "assistant",
-              content: result.text || null,
-              refusal: null,
-              tool_calls: openAIToolCalls,
-            },
-            finish_reason: this.resolveNonStreamFinishReason(
-              result.finishReason,
-              openAIToolCalls,
-            ),
-            logprobs: null,
+        textDeltas,
+        ...(await this.applyResultHandlers(invocation, {
+          text: textDeltas.length > 0 ? textDeltas.join("") : null,
+          toolCalls: selectedToolCalls,
+          finishReason: mutatedFinish.finishReason,
+          usage: {
+            inputTokens: usage?.inputTokens ?? 0,
+            outputTokens: usage?.outputTokens ?? 0,
+            totalTokens: usage?.totalTokens ?? 0,
           },
-        ],
-        usage: {
-          prompt_tokens: result.usage?.inputTokens ?? 0,
-          completion_tokens: result.usage?.outputTokens ?? 0,
-          total_tokens: result.usage?.totalTokens ?? 0,
-        },
-        service_tier: null,
+        })),
       };
     } finally {
       await this.cleanupRuntime(invocation.runtime);
     }
   }
 
+  private async *streamOpenAIFromFinalResult(
+    invocation: PreparedChatInvocation,
+    result: ACP2OpenAIFinalResult,
+    textDeltas?: string[],
+  ): AsyncIterable<string> {
+    const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
+    const created = Math.floor(Date.now() / 1000);
+    let isFirst = true;
+
+    const deltas =
+      textDeltas && textDeltas.length > 0
+        ? textDeltas
+        : typeof result.text === "string" && result.text.length > 0
+          ? [result.text]
+          : [];
+
+    for (const textDelta of deltas) {
+      const streamChunk: OpenAIStreamChunk = {
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model: invocation.runtime.modelName,
+        choices: [
+          {
+            index: 0,
+            delta: isFirst
+              ? { role: "assistant", content: textDelta }
+              : { content: textDelta },
+            finish_reason: null,
+          },
+        ],
+      };
+      isFirst = false;
+      yield `data: ${JSON.stringify(streamChunk)}\n\n`;
+    }
+
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      for (let i = 0; i < result.toolCalls.length; i++) {
+        const tc = result.toolCalls[i];
+        const toolCallChunk: OpenAIStreamChunk = {
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model: invocation.runtime.modelName,
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: i,
+                    id: tc.toolCallId,
+                    type: "function",
+                    function: {
+                      name: tc.toolName,
+                      arguments: JSON.stringify(tc.input ?? {}),
+                    },
+                  },
+                ],
+              },
+              finish_reason: null,
+            },
+          ],
+        };
+        yield `data: ${JSON.stringify(toolCallChunk)}\n\n`;
+      }
+    }
+
+    const finalChunk: OpenAIStreamChunk = {
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model: invocation.runtime.modelName,
+      choices: [
+        {
+          index: 0,
+          delta: {},
+          finish_reason: this.resolveStreamFinishReason(
+            result.finishReason,
+            result.toolCalls,
+          ),
+        },
+      ],
+    };
+
+    yield `data: ${JSON.stringify(finalChunk)}\n\n`;
+    yield "data: [DONE]\n\n";
+  }
+
   private async *runPreparedChatCompletionStream(
     invocation: PreparedChatInvocation,
   ): AsyncIterable<string> {
+    if (this.hasResultHandlers()) {
+      const buffered = await this.collectPreparedStreamResult(invocation);
+      yield* this.streamOpenAIFromFinalResult(
+        invocation,
+        buffered.result,
+        buffered.overridden ? undefined : buffered.textDeltas,
+      );
+      return;
+    }
+
     const result = streamText(invocation.params);
 
     try {
@@ -2082,6 +2475,114 @@ export class ACP2OpenAI {
     return this.mapChatToAnthropic(chatResponse);
   }
 
+  private async *streamAnthropicFromFinalResult(
+    modelName: string,
+    result: ACP2OpenAIFinalResult,
+    textDeltas?: string[],
+  ): AsyncIterable<string> {
+    const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
+    const textBlockIndex = 0;
+    let hasTextBlock = false;
+    let nextBlockIndex = 1;
+
+    yield this.formatSSEEvent("message_start", {
+      type: "message_start",
+      message: {
+        id: messageId,
+        type: "message",
+        role: "assistant",
+        content: [],
+        model: modelName,
+        stop_reason: null,
+        stop_sequence: null,
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+        },
+      },
+    });
+
+    const deltas =
+      textDeltas && textDeltas.length > 0
+        ? textDeltas
+        : typeof result.text === "string" && result.text.length > 0
+          ? [result.text]
+          : [];
+
+    for (const textDelta of deltas) {
+      if (!hasTextBlock) {
+        hasTextBlock = true;
+        yield this.formatSSEEvent("content_block_start", {
+          type: "content_block_start",
+          index: textBlockIndex,
+          content_block: {
+            type: "text",
+            text: "",
+          },
+        });
+      }
+
+      yield this.formatSSEEvent("content_block_delta", {
+        type: "content_block_delta",
+        index: textBlockIndex,
+        delta: {
+          type: "text_delta",
+          text: textDelta,
+        },
+      });
+    }
+
+    if (hasTextBlock) {
+      yield this.formatSSEEvent("content_block_stop", {
+        type: "content_block_stop",
+        index: textBlockIndex,
+      });
+    }
+
+    const openAIToolCalls = this.toOpenAIToolCalls(result.toolCalls);
+
+    for (const toolCall of result.toolCalls ?? []) {
+      const blockIndex = nextBlockIndex++;
+      yield this.formatSSEEvent("content_block_start", {
+        type: "content_block_start",
+        index: blockIndex,
+        content_block: {
+          type: "tool_use",
+          id: toolCall.toolCallId,
+          name: toolCall.toolName,
+          input: {},
+        },
+      });
+      yield this.formatSSEEvent("content_block_delta", {
+        type: "content_block_delta",
+        index: blockIndex,
+        delta: {
+          type: "input_json_delta",
+          partial_json: JSON.stringify(toolCall.input ?? {}),
+        },
+      });
+      yield this.formatSSEEvent("content_block_stop", {
+        type: "content_block_stop",
+        index: blockIndex,
+      });
+    }
+
+    yield this.formatSSEEvent("message_delta", {
+      type: "message_delta",
+      delta: {
+        stop_reason: this.mapOpenAIStopReasonToAnthropic(
+          result.finishReason,
+          openAIToolCalls,
+        ),
+        stop_sequence: null,
+      },
+      usage: this.toAnthropicUsageFromAISDK(result.usage),
+    });
+    yield this.formatSSEEvent("message_stop", {
+      type: "message_stop",
+    });
+  }
+
   async *handleAnthropicMessagesStream(
     req: AnthropicMessagesRequest,
   ): AsyncIterable<string> {
@@ -2095,9 +2596,20 @@ export class ACP2OpenAI {
       originalRequest: req,
       request: chatReq,
     });
+    const modelName = invocation.runtime.modelName || chatReq.model || "default";
+
+    if (this.hasResultHandlers()) {
+      const buffered = await this.collectPreparedStreamResult(invocation);
+      yield* this.streamAnthropicFromFinalResult(
+        modelName,
+        buffered.result,
+        buffered.overridden ? undefined : buffered.textDeltas,
+      );
+      return;
+    }
+
     const result = streamText(invocation.params);
     const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
-    const modelName = invocation.runtime.modelName || chatReq.model || "default";
     const textBlockIndex = 0;
     let hasTextBlock = false;
     let nextBlockIndex = 1;
@@ -2429,3 +2941,26 @@ export class ACP2OpenAI {
 export function createACP2OpenAI(config?: ACP2OpenAIConfig): ACP2OpenAI {
   return new ACP2OpenAI(config);
 }
+
+export {
+  buildCodeExecutionSystemPrompt,
+  createJavaScriptCodeExecutionPlugin,
+  createJavaScriptProgrammaticToolLoopPlugin,
+  createProgrammaticToolLoopPlugin,
+} from "./programmatic-tool-loop-plugin.js";
+export type {
+  CodeExecutionPendingToolCall,
+  CodeExecutionSession,
+  CodeExecutionSessionState,
+  JavaScriptCodeExecutionPluginConfig,
+  JavaScriptProgrammaticExecutionResult,
+  JavaScriptProgrammaticToolCallRecord,
+  JavaScriptProgrammaticToolHandlerContext,
+  ProgrammaticToolLoopExecuteContext,
+  ProgrammaticToolLoopFinalResultStep,
+  ProgrammaticToolLoopMatchContext,
+  ProgrammaticToolLoopPluginConfig,
+  ProgrammaticToolLoopStepResult,
+  ProgrammaticToolLoopToolCall,
+  ProgrammaticToolLoopToolResultStep,
+} from "./programmatic-tool-loop-plugin.js";
