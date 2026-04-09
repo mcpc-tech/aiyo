@@ -56,6 +56,19 @@ const adapter = createACP2OpenAI({
   },
 });
 
+const acpConfigSnapshot = {
+  command: process.env.ACP_COMMAND || file.acp?.command || 'claude-agent-acp',
+  args: parseACPArgs(file.acp?.args),
+  env: file.acp?.env,
+  session: {
+    cwd: process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
+    mcpServers: [],
+  },
+};
+process.stderr.write(
+  `[${new Date().toISOString()}] defaultACPConfig: ${JSON.stringify(acpConfigSnapshot, null, 2)}\n`,
+);
+
 const app = new Hono();
 
 // Global request logging middleware (request + response body)

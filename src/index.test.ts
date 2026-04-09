@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACP2OpenAI,
+  createJavaScriptCodeExecutionPlugin,
+  createProgrammaticToolLoopPlugin,
   type AnthropicMessagesRequest,
   type OpenAIChatCompletionRequest,
   type OpenAIResponsesRequest,
@@ -110,11 +112,11 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
   let adapter: ACP2OpenAI;
 
   beforeEach(() => {
+    vi.resetAllMocks();
     adapter = new ACP2OpenAI({
       defaultModel: "default",
       defaultACPConfig,
     });
-    vi.clearAllMocks();
   });
 
   it("maps core request params to AI SDK and returns OpenAI-compatible response", async () => {
@@ -348,6 +350,85 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         }),
       }),
     );
+  });
+
+  it("injects a system prompt that prioritizes request-scoped MCP tools", async () => {
+    const { generateText } = await import("ai");
+
+    const req: OpenAIChatCompletionRequest = {
+      model: "default",
+      messages: [{ role: "user", content: "please use my_tool" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "my_tool",
+            parameters: {
+              type: "object",
+              properties: {},
+            },
+          },
+        },
+      ],
+    };
+
+    await adapter.handleChatCompletion(req);
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("## Request-scoped MCP tools"),
+          }),
+        ]),
+      }),
+    );
+
+    const call = vi.mocked(generateText).mock.calls[0]?.[0];
+    const systemMessage = call?.messages?.[0];
+    expect(systemMessage).toMatchObject({ role: "system" });
+    expect(String(systemMessage?.content)).toContain("`my_tool`");
+    expect(String(systemMessage?.content)).toContain(
+      "Prefer these request-scoped MCP tools",
+    );
+  });
+
+  it("appends the MCP tool priority prompt only once when a system message already exists", async () => {
+    const { generateText } = await import("ai");
+
+    const req: OpenAIChatCompletionRequest = {
+      model: "default",
+      messages: [
+        { role: "system", content: "existing system guidance" },
+        { role: "user", content: "please use my_tool" },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "my_tool",
+            parameters: {
+              type: "object",
+              properties: {},
+            },
+          },
+        },
+      ],
+    };
+
+    await adapter.handleChatCompletion(req);
+    await adapter.handleChatCompletion(req);
+
+    const firstCall = vi.mocked(generateText).mock.calls[0]?.[0];
+    const secondCall = vi.mocked(generateText).mock.calls[1]?.[0];
+    const firstSystemContent = String(firstCall?.messages?.[0]?.content);
+    const secondSystemContent = String(secondCall?.messages?.[0]?.content);
+
+    expect(firstSystemContent).toContain("existing system guidance");
+    expect(firstSystemContent).toContain("## Request-scoped MCP tools");
+    expect(firstSystemContent.match(/## Request-scoped MCP tools/g)?.length).toBe(1);
+    expect(secondSystemContent.match(/## Request-scoped MCP tools/g)?.length).toBe(1);
   });
 
   it("unwraps ACP dynamic wrapper tool call to real tool name and args", async () => {
@@ -891,6 +972,669 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
     expect(finalChunk.choices[0].finish_reason).toBe("stop");
   });
 
+  it("emits tool_calls finish_reason for streamed tool calls even if upstream says stop", async () => {
+    const { streamText } = await import("ai");
+
+    const streamedToolCalls = Promise.resolve([
+      {
+        toolCallId: "call_stream_stop_with_tool",
+        toolName: "demo_tool",
+        input: { city: "SF" },
+      },
+    ]);
+    const streamedFinishReason = Promise.resolve("stop");
+
+    vi.mocked(streamText).mockReturnValueOnce({
+      textStream: (async function* () {})(),
+      toolCalls: streamedToolCalls,
+      finishReason: streamedFinishReason,
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          toolCalls: streamedToolCalls,
+          finishReason: streamedFinishReason,
+        }).then(resolve),
+    } as any);
+
+    const chunks: string[] = [];
+    for await (const chunk of adapter.handleChatCompletionStream({
+      model: "default",
+      stream: true,
+      messages: [{ role: "user", content: "tool stream" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "demo_tool",
+            parameters: {
+              type: "object",
+              properties: {},
+            },
+          },
+        },
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(
+      chunks.some((chunk) => {
+        if (!chunk.startsWith("data: {")) return false;
+        const parsed = JSON.parse(chunk.replace("data: ", ""));
+        return Boolean(parsed.choices?.[0]?.delta?.tool_calls?.length);
+      }),
+    ).toBe(true);
+    const finalChunk = JSON.parse(
+      chunks[chunks.length - 2].replace("data: ", ""),
+    );
+    expect(finalChunk.choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  it("lets plugins override final non-stream results before protocol mapping", async () => {
+    const { generateText } = await import("ai");
+
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: null,
+      finishReason: "tool-calls",
+      usage: {
+        inputTokens: 5,
+        outputTokens: 2,
+        totalTokens: 7,
+      },
+      toolCalls: [
+        {
+          toolCallId: "wrapper_1",
+          toolName: "tool_router",
+          input: { city: "SF" },
+        },
+      ],
+    } as any);
+
+    const adapterWithPlugin = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      plugins: [
+        {
+          onResult: (ctx) => {
+            if (ctx.result.toolCalls?.[0]?.toolName !== "tool_router") return;
+            ctx.overrideResult = {
+              text: null,
+              finishReason: "tool-calls",
+              usage: ctx.result.usage,
+              toolCalls: [
+                {
+                  toolCallId: "real_1",
+                  toolName: "lookup_weather",
+                  input: { city: "San Francisco" },
+                },
+              ],
+            };
+          },
+        },
+      ],
+    });
+
+    const res = await adapterWithPlugin.handleChatCompletion({
+      model: "default",
+      messages: [{ role: "user", content: "route this" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "tool_router",
+            parameters: {
+              type: "object",
+              properties: {},
+            },
+          },
+        },
+      ],
+    });
+
+    const firstCall = res.choices[0].message.tool_calls?.[0];
+    expect(firstCall).toBeDefined();
+    if (firstCall?.type === "function") {
+      expect(firstCall.function.name).toBe("lookup_weather");
+      expect(firstCall.function.arguments).toBe('{"city":"San Francisco"}');
+    } else {
+      throw new Error("Expected function tool call");
+    }
+  });
+
+  it("lets plugins override final stream results before OpenAI SSE mapping", async () => {
+    const { streamText } = await import("ai");
+
+    const streamedToolCalls = Promise.resolve([
+      {
+        toolCallId: "wrapper_1",
+        toolName: "tool_router",
+        input: { city: "SF" },
+      },
+    ]);
+    const streamedFinishReason = Promise.resolve("tool-calls");
+    const streamedUsage = Promise.resolve({
+      inputTokens: 1,
+      outputTokens: 1,
+      totalTokens: 2,
+    });
+
+    vi.mocked(streamText).mockReturnValueOnce({
+      textStream: (async function* () {})(),
+      toolCalls: streamedToolCalls,
+      finishReason: streamedFinishReason,
+      usage: streamedUsage,
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          toolCalls: streamedToolCalls,
+          finishReason: streamedFinishReason,
+          usage: streamedUsage,
+        }).then(resolve),
+    } as any);
+
+    const adapterWithPlugin = new ACP2OpenAI({
+      defaultModel: "default",
+      defaultACPConfig,
+      plugins: [
+        {
+          onResult: (ctx) => {
+            if (ctx.result.toolCalls?.[0]?.toolName !== "tool_router") return;
+            ctx.overrideResult = {
+              text: null,
+              finishReason: "tool-calls",
+              usage: ctx.result.usage,
+              toolCalls: [
+                {
+                  toolCallId: "real_stream_1",
+                  toolName: "lookup_weather",
+                  input: { city: "San Francisco" },
+                },
+              ],
+            };
+          },
+        },
+      ],
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of adapterWithPlugin.handleChatCompletionStream({
+      model: "default",
+      stream: true,
+      messages: [{ role: "user", content: "route the stream" }],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "tool_router",
+            parameters: {
+              type: "object",
+              properties: {},
+            },
+          },
+        },
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some((chunk) => chunk.includes('"name":"tool_router"'))).toBe(false);
+    expect(chunks.some((chunk) => chunk.includes('"name":"lookup_weather"'))).toBe(true);
+    expect(chunks[chunks.length - 1]).toBe("data: [DONE]\n\n");
+  });
+
+  describe("programmatic tool loop plugins", () => {
+    it("runs a programmatic tool loop plugin and feeds tool results back through the model", async () => {
+      const { generateText } = await import("ai");
+
+      vi.mocked(generateText)
+        .mockResolvedValueOnce({
+          text: null,
+          finishReason: "tool-calls",
+          usage: {
+            inputTokens: 8,
+            outputTokens: 3,
+            totalTokens: 11,
+          },
+          toolCalls: [
+            {
+              toolCallId: "wrapper_1",
+              toolName: "tool_router",
+              input: { city: "SF" },
+            },
+          ],
+        } as any)
+        .mockResolvedValueOnce({
+          text: null,
+          finishReason: "tool-calls",
+          usage: {
+            inputTokens: 12,
+            outputTokens: 4,
+            totalTokens: 16,
+          },
+          toolCalls: [
+            {
+              toolCallId: "real_1",
+              toolName: "lookup_weather",
+              input: { city: "San Francisco" },
+            },
+          ],
+        } as any);
+
+      const adapterWithLoopPlugin = new ACP2OpenAI({
+        defaultModel: "default",
+        defaultACPConfig,
+        plugins: [
+          createProgrammaticToolLoopPlugin({
+            match: (toolCall) => toolCall.toolName === "tool_router",
+            execute: async ({ toolCall }) => ({
+              output: {
+                selectedTool: "lookup_weather",
+                city: toolCall.input.city,
+              },
+            }),
+            prepareNextRequest: (request) => ({
+              ...request,
+              tools: [
+                {
+                  type: "function",
+                  function: {
+                    name: "lookup_weather",
+                    parameters: {
+                      type: "object",
+                      properties: {},
+                    },
+                  },
+                },
+              ],
+            }),
+          }),
+        ],
+      });
+
+      const res = await adapterWithLoopPlugin.handleChatCompletion({
+        model: "default",
+        messages: [{ role: "user", content: "route and continue" }],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "tool_router",
+              parameters: {
+                type: "object",
+                properties: {},
+              },
+            },
+          },
+        ],
+      });
+
+      expect(generateText).toHaveBeenCalledTimes(2);
+
+      const secondCall = vi.mocked(generateText).mock.calls[1][0];
+      expect(secondCall.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-call",
+                toolCallId: "wrapper_1",
+                toolName: "tool_router",
+                args: { city: "SF" },
+              }),
+            ]),
+          }),
+          expect.objectContaining({
+            role: "tool",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-result",
+                toolCallId: "wrapper_1",
+                output: '{"selectedTool":"lookup_weather","city":"SF"}',
+              }),
+            ]),
+          }),
+        ]),
+      );
+
+      const firstCall = res.choices[0].message.tool_calls?.[0];
+      expect(firstCall).toBeDefined();
+      if (firstCall?.type === "function") {
+        expect(firstCall.function.name).toBe("lookup_weather");
+        expect(firstCall.function.arguments).toBe('{"city":"San Francisco"}');
+      } else {
+        throw new Error("Expected function tool call");
+      }
+    });
+  });
+
+  describe("JavaScript code execution plugin", () => {
+    function createCodeExecutionAdapter(toolNames: string[]) {
+      const plugin = createJavaScriptCodeExecutionPlugin({
+        match: (tc) => tc.toolName === "code_execution",
+        toolNames,
+      });
+
+      return new ACP2OpenAI({
+        defaultModel: "default",
+        defaultACPConfig,
+        plugins: [plugin],
+      });
+    }
+
+    function codeExecutionTools() {
+      return [
+        {
+          type: "function" as const,
+          function: {
+            name: "code_execution",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ];
+    }
+
+    function createExecutionRequest(prompt: string): OpenAIChatCompletionRequest {
+      return {
+        model: "default",
+        messages: [{ role: "user", content: prompt }],
+        tools: codeExecutionTools(),
+      };
+    }
+
+    function createResumeRequest(
+      prompt: string,
+      bridgedCall: any,
+      toolResultContent: string,
+    ): OpenAIChatCompletionRequest {
+      return {
+        model: "default",
+        messages: [
+          { role: "user", content: prompt },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [bridgedCall],
+          },
+          {
+            role: "tool",
+            tool_call_id: bridgedCall.id,
+            content: toolResultContent,
+          },
+        ],
+        tools: codeExecutionTools(),
+      };
+    }
+
+    function makeStopResult(text: string) {
+      return {
+        text,
+        finishReason: "stop",
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        toolCalls: [],
+      } as any;
+    }
+
+    function makeCodeExecutionResult(toolCallId: string, code: string) {
+      return {
+        text: null,
+        finishReason: "tool-calls",
+        usage: { inputTokens: 9, outputTokens: 3, totalTokens: 12 },
+        toolCalls: [
+          {
+            toolCallId,
+            toolName: "code_execution",
+            input: { code },
+          },
+        ],
+      } as any;
+    }
+
+    function createDeferred<T>() {
+      let resolve!: (value: T | PromiseLike<T>) => void;
+      let reject!: (reason?: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    it("suspends on the first sandbox tool call and exposes the bridge tool call", async () => {
+      const { generateText } = await import("ai");
+
+      vi.mocked(generateText).mockResolvedValueOnce(
+        makeCodeExecutionResult(
+          "code_exec_1",
+          [
+            'const data = await tools.read_file({ path: "/tmp/test.txt" });',
+            "return data;",
+          ].join("\n"),
+        ),
+      );
+
+      const adapterWithPlugin = createCodeExecutionAdapter([
+        "read_file",
+        "write_file",
+        "list_dir",
+      ]);
+
+      const res = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("read a file"),
+      );
+
+      expect(res.choices[0].finish_reason).toBe("tool_calls");
+      const bridgedCall = res.choices[0].message.tool_calls?.[0] as any;
+      expect(bridgedCall).toBeDefined();
+      expect(bridgedCall?.type).toBe("function");
+      expect(bridgedCall?.function.name).toBe("read_file");
+      expect(JSON.parse(bridgedCall.function.arguments)).toEqual({
+        path: "/tmp/test.txt",
+      });
+      expect(generateText).toHaveBeenCalledTimes(1);
+    });
+
+    it("resumes sandbox completion and feeds the final result back through the original conversation", async () => {
+      const { generateText } = await import("ai");
+
+      vi.mocked(generateText)
+        .mockResolvedValueOnce(
+          makeCodeExecutionResult(
+            "code_exec_2",
+            [
+              'const data = await tools.read_file({ path: "/tmp/test.txt" });',
+              "return { content: data };",
+            ].join("\n"),
+          ),
+        )
+        .mockResolvedValueOnce(makeStopResult("dummy"))
+        .mockResolvedValueOnce({
+          text: "The file contains hello world",
+          finishReason: "stop",
+          usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
+          toolCalls: [],
+        } as any);
+
+      const adapterWithPlugin = createCodeExecutionAdapter(["read_file"]);
+
+      const res1 = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("read a file"),
+      );
+      const bridgedCall = res1.choices[0].message.tool_calls![0];
+
+      const res2 = await adapterWithPlugin.handleChatCompletion(
+        createResumeRequest("read a file", bridgedCall, '"hello world"'),
+      );
+
+      expect(res2.choices[0].message.content).toBe(
+        "The file contains hello world",
+      );
+      expect(res2.choices[0].finish_reason).toBe("stop");
+      expect(generateText).toHaveBeenCalledTimes(3);
+
+      const finalModelCall = vi.mocked(generateText).mock.calls[2][0];
+      expect(finalModelCall.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: "read a file",
+          }),
+          expect.objectContaining({
+            role: "assistant",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-call",
+                toolCallId: "code_exec_2",
+                toolName: "code_execution",
+              }),
+            ]),
+          }),
+          expect.objectContaining({
+            role: "tool",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-result",
+                toolCallId: "code_exec_2",
+                output: '{"content":"hello world"}',
+              }),
+            ]),
+          }),
+        ]),
+      );
+    });
+
+    it("can suspend more than once and return the next bridge tool call on each resume", async () => {
+      const { generateText } = await import("ai");
+
+      vi.mocked(generateText)
+        .mockResolvedValueOnce(
+          makeCodeExecutionResult(
+            "code_exec_multi",
+            [
+              'const meta = await tools.read_file({ path: "/tmp/meta.json" });',
+              'const listing = await tools.list_dir({ path: meta.dir });',
+              "return listing;",
+            ].join("\n"),
+          ),
+        )
+        .mockResolvedValueOnce(makeStopResult("dummy after first resume"))
+        .mockResolvedValueOnce(makeStopResult("dummy after second resume"))
+        .mockResolvedValueOnce({
+          text: "Listed files",
+          finishReason: "stop",
+          usage: { inputTokens: 18, outputTokens: 6, totalTokens: 24 },
+          toolCalls: [],
+        } as any);
+
+      const adapterWithPlugin = createCodeExecutionAdapter([
+        "read_file",
+        "list_dir",
+      ]);
+
+      const firstResponse = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("inspect the project"),
+      );
+      const firstBridgedCall = firstResponse.choices[0].message.tool_calls?.[0] as any;
+      expect(firstBridgedCall?.function.name).toBe("read_file");
+      expect(JSON.parse(firstBridgedCall.function.arguments)).toEqual({
+        path: "/tmp/meta.json",
+      });
+
+      const secondResponse = await adapterWithPlugin.handleChatCompletion(
+        createResumeRequest(
+          "inspect the project",
+          firstBridgedCall,
+          '{"dir":"/tmp/project"}',
+        ),
+      );
+      expect(secondResponse.choices[0].finish_reason).toBe("tool_calls");
+      const secondBridgedCall = secondResponse.choices[0].message.tool_calls?.[0] as any;
+      expect(secondBridgedCall?.function.name).toBe("list_dir");
+      expect(JSON.parse(secondBridgedCall.function.arguments)).toEqual({
+        path: "/tmp/project",
+      });
+
+      const finalResponse = await adapterWithPlugin.handleChatCompletion(
+        createResumeRequest(
+          "inspect the project",
+          secondBridgedCall,
+          '["a.txt","b.txt"]',
+        ),
+      );
+      expect(finalResponse.choices[0].message.content).toBe("Listed files");
+      expect(finalResponse.choices[0].finish_reason).toBe("stop");
+      expect(generateText).toHaveBeenCalledTimes(4);
+    });
+
+    it("keeps concurrent resume requests isolated by execution session", async () => {
+      const { generateText } = await import("ai");
+      const resumeADummy = createDeferred<any>();
+
+      vi.mocked(generateText)
+        .mockResolvedValueOnce(
+          makeCodeExecutionResult(
+            "code_exec_a",
+            [
+              'const data = await tools.read_file({ path: "/tmp/a.txt" });',
+              "return { content: data };",
+            ].join("\n"),
+          ),
+        )
+        .mockResolvedValueOnce(
+          makeCodeExecutionResult(
+            "code_exec_b",
+            [
+              'const data = await tools.read_file({ path: "/tmp/b.txt" });',
+              "return { content: data };",
+            ].join("\n"),
+          ),
+        )
+        .mockImplementationOnce(() => resumeADummy.promise)
+        .mockResolvedValueOnce(makeStopResult("dummy B"))
+        .mockResolvedValueOnce({
+          text: "final B",
+          finishReason: "stop",
+          usage: { inputTokens: 11, outputTokens: 5, totalTokens: 16 },
+          toolCalls: [],
+        } as any)
+        .mockResolvedValueOnce({
+          text: "final A",
+          finishReason: "stop",
+          usage: { inputTokens: 11, outputTokens: 5, totalTokens: 16 },
+          toolCalls: [],
+        } as any);
+
+      const adapterWithPlugin = createCodeExecutionAdapter(["read_file"]);
+
+      const firstStart = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("read file A"),
+      );
+      const secondStart = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("read file B"),
+      );
+      const firstBridgedCall = firstStart.choices[0].message.tool_calls?.[0] as any;
+      const secondBridgedCall = secondStart.choices[0].message.tool_calls?.[0] as any;
+
+      const firstResumePromise = adapterWithPlugin.handleChatCompletion(
+        createResumeRequest("read file A", firstBridgedCall, '"alpha"'),
+      );
+
+      for (let attempt = 0; attempt < 20; attempt++) {
+        if (vi.mocked(generateText).mock.calls.length >= 3) break;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(generateText).toHaveBeenCalledTimes(3);
+
+      const secondResume = await adapterWithPlugin.handleChatCompletion(
+        createResumeRequest("read file B", secondBridgedCall, '"beta"'),
+      );
+      expect(secondResume.choices[0].message.content).toBe("final B");
+
+      resumeADummy.resolve(makeStopResult("dummy A"));
+      const firstResume = await firstResumePromise;
+      expect(firstResume.choices[0].message.content).toBe("final A");
+      expect(generateText).toHaveBeenCalledTimes(6);
+    });
+  });
+
   it("runs middleware for responses requests and preserves endpoint context", async () => {
     const { generateText } = await import("ai");
     const seen: Array<{ phase: string; endpoint: string; callType: string }> = [];
@@ -1014,7 +1758,10 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         stopSequences: ["DONE"],
         toolChoice: { type: "tool", toolName: "lookup_weather" },
         messages: expect.arrayContaining([
-          expect.objectContaining({ role: "system", content: "system prompt" }),
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining("system prompt"),
+          }),
           expect.objectContaining({
             role: "user",
             content: "Hello from Anthropic",

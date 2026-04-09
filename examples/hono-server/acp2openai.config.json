@@ -1,5 +1,6 @@
 {
   "port": 3456,
+  "defaultModel": "claude-sonnet-4.6",
   "acp": {
     "command": "codebuddy",
     "args": ["--acp"],

@@ -123,9 +123,10 @@ From the repo root:
 ```bash
 pnpm install
 pnpm run launch opencode
+pnpm run launch claude
 ```
 
-The launcher starts a local OpenAI-compatible proxy backed by your ACP runtime, rewrites the local `opencode` provider config, and then opens `opencode` against that proxy.
+The launcher starts a local OpenAI-compatible proxy backed by your ACP runtime. For `opencode`, it rewrites the local provider config before opening the client. For `claude`, it launches Claude Code with session-level Anthropic settings that point it at the same local proxy.
 
 ### Local config file for the Hono example
 
@@ -164,6 +165,7 @@ Creates an `ACP2OpenAI` adapter instance.
 - `defaultACPConfig?: ACPProviderSettings`
 - `defaultModel?: string`
 - `middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[]`
+- `plugins?: ACP2OpenAIPlugin | ACP2OpenAIPlugin[]`
 
 ### `middleware`
 
@@ -205,6 +207,107 @@ const adapter = createACP2OpenAI({
 Use the `request` phase when you want to change OpenAI-facing fields such as `model`, `messages`, `tools`, `tool_choice`, `temperature`, or `extra_body`.
 Use the `params` phase when you want to directly override the final params sent to `generateText` / `streamText`.
 Use the `result` phase when you want to rewrite `streamText` output, including per-chunk text deltas, streamed tool calls, or the final finish reason.
+
+### `plugins`
+
+Use `plugins` when you want to work at the **unified final-result layer** instead of writing separate OpenAI / Responses / Anthropic adapters yourself.
+
+A plugin can:
+
+- add normal `middleware`
+- inspect the normalized final result through `onResult`
+- return `overrideResult` to short-circuit the default protocol mapping
+- call `runModel(...)` to continue the conversation from plugin code
+
+That makes plugins a good fit for **programmatic tool loops**, where the plugin:
+
+1. collapses many tools into one wrapper tool
+2. watches for that wrapper tool call in `onResult`
+3. executes a hidden loop internally
+4. returns a single final normalized result back to the core adapter
+
+`createProgrammaticToolLoopPlugin(...)` is the low-level generic helper:
+
+```ts
+import {
+  createACP2OpenAI,
+  createProgrammaticToolLoopPlugin,
+} from "@yaonyan/acp2openai-compatible";
+
+const adapter = createACP2OpenAI({
+  defaultModel: "default",
+  defaultACPConfig,
+  plugins: [
+    createProgrammaticToolLoopPlugin({
+      match: (toolCall) => toolCall.toolName === "tool_router",
+      execute: async ({ toolCall }) => ({
+        output: {
+          selectedTool: "lookup_weather",
+          args: toolCall.input,
+        },
+      }),
+      prepareNextRequest: (request) => ({
+        ...request,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "lookup_weather",
+              parameters: { type: "object", properties: {} },
+            },
+          },
+        ],
+      }),
+    }),
+  ],
+});
+```
+
+If you want something closer to Claude's **programmatic tool calling**, use `createJavaScriptCodeExecutionPlugin(...)`.
+
+This implements a **cross-request tool bridge**:
+
+1. The model sees ONE tool (e.g. `code_execution`) and writes JS code in the input
+2. The plugin starts executing the JS in a `node:vm` sandbox
+3. When the code calls `await tools.read_file(args)`, the sandbox **suspends**
+4. The OpenAI layer **immediately responds** with `tool_calls: [{ name: "read_file", args }]`
+5. The user/agent executes the real tool and sends a new request with the `tool_result`
+6. The plugin **resumes** the sandbox — `tools.read_file()` returns the result
+7. Repeat for each `tools.*` call in the JS code
+8. When the JS finishes, the final value becomes the `tool_result` for the model
+
+```ts
+import {
+  createACP2OpenAI,
+  createJavaScriptCodeExecutionPlugin,
+} from "@yaonyan/acp2openai-compatible";
+
+const adapter = createACP2OpenAI({
+  defaultModel: "default",
+  defaultACPConfig,
+  plugins: [
+    createJavaScriptCodeExecutionPlugin({
+      match: (toolCall) => toolCall.toolName === "code_execution",
+      toolNames: ["read_file", "write_file", "list_dir"],
+    }),
+  ],
+});
+```
+
+The model emits a tool call like:
+
+```json
+{
+  "toolName": "code_execution",
+  "input": {
+    "code": "const data = await tools.read_file({ path: '/tmp/test.txt' });\nconst lines = data.split('\\n');\nawait tools.write_file({ path: '/tmp/out.txt', content: lines.join(',') });\nreturn { lineCount: lines.length };"
+  }
+}
+```
+
+The key difference from a normal tool loop: the JS sandbox **stays alive across multiple HTTP request/response cycles**. Each `tools.*` call suspends the sandbox and returns a real `tool_calls` response to the caller; the next request with `tool_result` resumes it.
+
+This uses Node's `vm` module, so it is meant for **trusted or partially trusted** code.
 
 ### `adapter.handleRequest(request)`
 
