@@ -1,5 +1,5 @@
 /**
- * Shared type definitions for the acp2openai-compatible core adapter.
+ * Shared type definitions for the aiyo-compatible core adapter.
  * All public types are defined here and re-exported from index.ts.
  */
 import { Output, type ModelMessage } from "ai";
@@ -40,15 +40,15 @@ export interface OpenAIExtraBody {
   [key: string]: unknown;
 }
 
-export type ACP2OpenAIEndpoint = "chat.completions" | "responses" | "messages";
-export type ACP2OpenAICallType = "generateText" | "streamText";
-export type ACP2OpenAIToolChoiceValue =
+export type AiyoEndpoint = "chat.completions" | "responses" | "messages";
+export type AiyoCallType = "generateText" | "streamText";
+export type AiyoToolChoiceValue =
   | "auto"
   | "none"
   | "required"
   | { type: "tool"; toolName: string };
 
-export interface ACP2OpenAIModelCallParams {
+export interface AiyoModelCallParams {
   model: any;
   messages: ModelMessage[];
   temperature?: number;
@@ -61,20 +61,20 @@ export interface ACP2OpenAIModelCallParams {
   seed?: number;
   output?: ReturnType<typeof Output.json>;
   tools?: Record<string, any>;
-  toolChoice?: ACP2OpenAIToolChoiceValue;
+  toolChoice?: AiyoToolChoiceValue;
 }
 
 export interface ACP2ProviderRuntime {
   model: any;
   modelName?: string;
   tools?: Record<string, any>;
-  toolChoice?: ACP2OpenAIToolChoiceValue;
+  toolChoice?: AiyoToolChoiceValue;
   cleanup?: () => void | Promise<void>;
 }
 
 export interface ACP2RuntimeFactoryContext {
-  endpoint: ACP2OpenAIEndpoint;
-  callType: ACP2OpenAICallType;
+  endpoint: AiyoEndpoint;
+  callType: AiyoCallType;
   request: OpenAIChatCompletionRequest;
   modelId?: string;
   defaultModel?: string;
@@ -93,16 +93,16 @@ export type ACP2ToolCallNormalizer = (toolCall: RawToolCall) => RawToolCall | un
 
 export type ACP2ListModelsResolver = (() => string[] | Promise<string[]>) | string[];
 
-export type ACP2OpenAIResultEventType = "text-delta" | "tool-calls" | "finish";
+export type AiyoResultEventType = "text-delta" | "tool-calls" | "finish";
 
-export interface ACP2OpenAIResultMutation {
-  eventType: ACP2OpenAIResultEventType;
+export interface AiyoResultMutation {
+  eventType: AiyoResultEventType;
   textDelta?: string;
   toolCalls?: any[];
   finishReason?: string;
 }
 
-export interface ACP2OpenAIUsage {
+export interface AiyoUsage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
@@ -116,57 +116,57 @@ export interface RawToolCall {
   [key: string]: unknown;
 }
 
-export interface ACP2OpenAIFinalResult {
+export interface AiyoFinalResult {
   text?: string | null;
   toolCalls?: RawToolCall[];
   finishReason?: string;
-  usage?: ACP2OpenAIUsage;
+  usage?: AiyoUsage;
   /** @internal Used by the PTC plugin to smuggle the active execution session ID. */
   _executionId?: string;
 }
 
-export interface ACP2OpenAIRunModelOptions {
-  callType?: ACP2OpenAICallType;
+export interface AiyoRunModelOptions {
+  callType?: AiyoCallType;
   skipPlugins?: boolean;
 }
 
-export interface ACP2OpenAIResultHandlerContext {
-  endpoint: ACP2OpenAIEndpoint;
-  callType: ACP2OpenAICallType;
+export interface AiyoResultHandlerContext {
+  endpoint: AiyoEndpoint;
+  callType: AiyoCallType;
   stream: boolean;
   originalRequest: OpenAIChatCompletionRequest | OpenAIResponsesRequest | AnthropicMessagesRequest;
   request: OpenAIChatCompletionRequest;
-  params: ACP2OpenAIModelCallParams;
-  result: ACP2OpenAIFinalResult;
-  overrideResult?: ACP2OpenAIFinalResult;
+  params: AiyoModelCallParams;
+  result: AiyoFinalResult;
+  overrideResult?: AiyoFinalResult;
   runModel: (
     request: OpenAIChatCompletionRequest,
-    options?: ACP2OpenAIRunModelOptions,
-  ) => Promise<ACP2OpenAIFinalResult>;
+    options?: AiyoRunModelOptions,
+  ) => Promise<AiyoFinalResult>;
 }
 
-export type ACP2OpenAIResultHandler = (
-  context: ACP2OpenAIResultHandlerContext,
+export type AiyoResultHandler = (
+  context: AiyoResultHandlerContext,
 ) => void | Promise<void>;
 
-export interface ACP2OpenAIPlugin {
+export interface AiyoPlugin {
   name?: string;
-  middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[];
-  onResult?: ACP2OpenAIResultHandler | ACP2OpenAIResultHandler[];
+  middleware?: AiyoMiddleware | AiyoMiddleware[];
+  onResult?: AiyoResultHandler | AiyoResultHandler[];
 }
 
-export interface ACP2OpenAIMiddlewareContext {
+export interface AiyoMiddlewareContext {
   phase: "request" | "params" | "result";
-  endpoint: ACP2OpenAIEndpoint;
-  callType: ACP2OpenAICallType;
+  endpoint: AiyoEndpoint;
+  callType: AiyoCallType;
   stream: boolean;
   originalRequest: OpenAIChatCompletionRequest | OpenAIResponsesRequest | AnthropicMessagesRequest;
   request: OpenAIChatCompletionRequest;
-  params?: ACP2OpenAIModelCallParams;
-  result?: ACP2OpenAIResultMutation;
+  params?: AiyoModelCallParams;
+  result?: AiyoResultMutation;
 }
 
-export type ACP2OpenAIMiddleware = (context: ACP2OpenAIMiddlewareContext) => void | Promise<void>;
+export type AiyoMiddleware = (context: AiyoMiddlewareContext) => void | Promise<void>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenAI Chat Completions request/response types
@@ -401,10 +401,10 @@ export type AnthropicMessageResponse = Omit<
 // Adapter config
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ACP2OpenAIConfig {
+export interface AiyoConfig {
   defaultModel?: string;
-  middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[];
-  plugins?: ACP2OpenAIPlugin | ACP2OpenAIPlugin[];
+  middleware?: AiyoMiddleware | AiyoMiddleware[];
+  plugins?: AiyoPlugin | AiyoPlugin[];
   runtimeFactory?: ACP2RuntimeFactory;
   listModels?: ACP2ListModelsResolver;
   transformTools?: ACP2ToolTransformer;

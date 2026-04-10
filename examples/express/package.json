@@ -1,5 +1,5 @@
 {
-  "name": "acp2openai-example-express-server",
+  "name": "aiyo-example-express-server",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,7 +7,7 @@
     "start": "tsx server.ts"
   },
   "dependencies": {
-    "@yaonyan/acp2openai-acp": "workspace:*",
+    "@mcpc-tech/aiyo-acp": "workspace:*",
     "express": "^4.21.2"
   },
   "devDependencies": {

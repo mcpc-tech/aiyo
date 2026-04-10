@@ -3,12 +3,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { Hono } from "hono";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
+import { createAiyo } from "@mcpc-tech/aiyo";
 import {
   createJavaScriptCodeExecutionPlugin,
   type JavaScriptProgrammaticExecutionResult,
   type JavaScriptProgrammaticToolCallRecord,
-} from "@yaonyan/acp2openai-ptc";
+} from "@mcpc-tech/aiyo-ptc";
 
 for (const envPath of [
   resolve(import.meta.dirname, ".env"),
@@ -40,7 +40,7 @@ const toolNames = [
 ];
 
 const openai = createOpenAI({ baseURL, apiKey });
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel,
   runtimeFactory: ({ modelId }) => ({
     model: openai.chat(modelId || defaultModel),
@@ -70,7 +70,7 @@ const app = new Hono();
 
 app.get("/", (c) =>
   c.json({
-    name: "acp2openai-hono-ptc",
+    name: "aiyo-hono-ptc",
     mode: "ptc",
     provider: baseURL,
     model: defaultModel,

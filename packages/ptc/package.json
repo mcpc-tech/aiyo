@@ -1,7 +1,7 @@
 {
-  "name": "@yaonyan/acp2openai-ptc",
+  "name": "@mcpc-tech/aiyo-ptc",
   "version": "0.1.0",
-  "description": "Programmatic tool calling plugin and Deno runtime for acp2openai-compatible",
+  "description": "Programmatic tool calling plugin and Deno runtime for aiyo-compatible",
   "license": "MIT",
   "files": [
     "dist",
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@mcpc-tech/handle-sandbox": "^0.0.11",
-    "@yaonyan/acp2openai-compatible": "workspace:*"
+    "@mcpc-tech/aiyo": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

@@ -1,22 +1,22 @@
-# @yaonyan/acp2openai-acp
+# @mcpc-tech/aiyo-acp
 
-ACP integration package for `@yaonyan/acp2openai-compatible`.
+ACP integration package for `@mcpc-tech/aiyo`.
 
 Use this package when you want the adapter to boot an **ACP provider runtime** from `defaultACPConfig` or from request-level `extra_body.acpConfig`.
 
 ## Install
 
 ```bash
-pnpm add @yaonyan/acp2openai-acp
+pnpm add @mcpc-tech/aiyo-acp
 ```
 
 ## Quick start
 
 ```ts
 import { Hono } from "hono";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-acp";
+import { createAiyo } from "@mcpc-tech/aiyo-acp";
 
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel: "default",
   defaultACPConfig: {
     command: "codebuddy",
@@ -70,4 +70,4 @@ This package also exports these helpers when you want lower-level control:
 - `createACPToolTransformer`
 - `createACPToolCallNormalizer`
 
-It re-exports the core adapter types and helpers from `@yaonyan/acp2openai-compatible`.
+It re-exports the core adapter types and helpers from `@mcpc-tech/aiyo`.

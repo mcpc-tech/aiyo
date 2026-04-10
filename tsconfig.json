@@ -5,9 +5,9 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "@yaonyan/acp2openai-compatible": ["./packages/core/src/index.ts"],
-      "@yaonyan/acp2openai-acp": ["./packages/acp/src/index.ts"],
-      "@yaonyan/acp2openai-ptc": ["./packages/ptc/src/index.ts"]
+      "@mcpc-tech/aiyo": ["./packages/core/src/index.ts"],
+      "@mcpc-tech/aiyo-acp": ["./packages/acp/src/index.ts"],
+      "@mcpc-tech/aiyo-ptc": ["./packages/ptc/src/index.ts"]
     },
     "strict": true,
     "declaration": true,

@@ -2,7 +2,7 @@
  * Anthropic Messages API adapter — request/response conversion helpers.
  * @see https://platform.claude.com/docs/en/api/typescript/messages/create
  *
- * All functions are pure (no class state).  The ACP2OpenAI class delegates to
+ * All functions are pure (no class state).  The AiyoAdapter class delegates to
  * these helpers so this file can be read and maintained in isolation.
  */
 import type {

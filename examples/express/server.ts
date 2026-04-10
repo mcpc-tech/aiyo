@@ -1,11 +1,11 @@
 import express from "express";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-acp";
+import { createAiyo } from "@mcpc-tech/aiyo-acp";
 
 const app = express();
 app.use(express.json());
 
 // Create adapter with default ACP configuration
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultACPConfig: {
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-example"],

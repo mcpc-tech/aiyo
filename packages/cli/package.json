@@ -1,10 +1,10 @@
 {
-  "name": "@yaonyan/acp2openai-cli",
+  "name": "@mcpc-tech/aiyo-cli",
   "version": "0.1.0",
-  "description": "CLI launcher for acp2openai-compatible",
+  "description": "CLI launcher for aiyo-compatible",
   "license": "MIT",
   "bin": {
-    "acp2openai": "./dist/index.mjs"
+    "aiyo": "./dist/index.mjs"
   },
   "files": [
     "dist",
@@ -20,7 +20,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@yaonyan/acp2openai-acp": "workspace:*"
+    "@mcpc-tech/aiyo-acp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

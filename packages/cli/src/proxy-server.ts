@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-acp";
+import { createAiyo } from "@mcpc-tech/aiyo-acp";
 import type { LaunchConfig } from "./config.js";
 
 export interface RunningProxyServer {
@@ -45,7 +45,7 @@ async function handleNodeResponse(res: ServerResponse, response: Response): Prom
 }
 
 export async function startProxyServer(config: LaunchConfig): Promise<RunningProxyServer> {
-  const adapter = createACP2OpenAI({
+  const adapter = createAiyo({
     defaultModel: config.model,
     defaultACPConfig: {
       command: config.acpCommand,
@@ -67,7 +67,7 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
 
       if (req.method === "GET" && req.url === "/") {
         jsonResponse(res, 200, {
-          name: "acp2openai-cli-proxy",
+          name: "aiyo-cli-proxy",
           endpoints: [
             "/health",
             "/v1/models",

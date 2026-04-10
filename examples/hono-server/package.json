@@ -1,5 +1,5 @@
 {
-  "name": "acp2openai-example-hono-server",
+  "name": "aiyo-example-hono-server",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,9 +11,9 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.52",
     "@hono/node-server": "^1.19.6",
-    "@yaonyan/acp2openai-acp": "workspace:*",
-    "@yaonyan/acp2openai-compatible": "workspace:*",
-    "@yaonyan/acp2openai-ptc": "workspace:*",
+    "@mcpc-tech/aiyo-acp": "workspace:*",
+    "@mcpc-tech/aiyo": "workspace:*",
+    "@mcpc-tech/aiyo-ptc": "workspace:*",
     "hono": "^4.9.6"
   },
   "devDependencies": {

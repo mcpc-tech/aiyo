@@ -1,13 +1,13 @@
-# @yaonyan/acp2openai-compatible
+# @mcpc-tech/aiyo
 
 Provider-agnostic OpenAI- and Anthropic-compatible HTTP adapter built on top of the AI SDK.
 
 This repo now has a **split package layout**:
 
-- `@yaonyan/acp2openai-compatible`: generic core adapter
-- `@yaonyan/acp2openai-acp`: ACP runtime integration for the core adapter
-- `@yaonyan/acp2openai-ptc`: Programmatic Tool Calling (PTC) plugin and Deno-backed runtime helpers
-- `@yaonyan/acp2openai-cli`: local launcher built on top of the ACP package
+- `@mcpc-tech/aiyo`: generic core adapter
+- `@mcpc-tech/aiyo-acp`: ACP runtime integration for the core adapter
+- `@mcpc-tech/aiyo-ptc`: Programmatic Tool Calling (PTC) plugin and Deno-backed runtime helpers
+- `@mcpc-tech/aiyo-cli`: local launcher built on top of the ACP package
 
 ## Supported endpoints
 
@@ -19,14 +19,14 @@ This repo now has a **split package layout**:
 
 ## Package guide
 
-### `@yaonyan/acp2openai-compatible`
+### `@mcpc-tech/aiyo`
 
 Use the core package when you want to plug in **your own AI SDK runtime** via `runtimeFactory`.
 
 Install:
 
 ```bash
-pnpm add @yaonyan/acp2openai-compatible ai openai zod
+pnpm add @mcpc-tech/aiyo ai openai zod
 ```
 
 Minimal example:
@@ -34,11 +34,11 @@ Minimal example:
 ```ts
 import { Hono } from "hono";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
+import { createAiyo } from "@mcpc-tech/aiyo";
 
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel: "gpt-4o-mini",
   runtimeFactory: ({ modelId }) => ({
     model: openai.chat(modelId || "gpt-4o-mini"),
@@ -56,26 +56,26 @@ app.post("/v1/messages", adapter.honoHandler());
 
 Core config highlights:
 
-- `runtimeFactory`: required unless you use a provider integration package such as `@yaonyan/acp2openai-acp`
+- `runtimeFactory`: required unless you use a provider integration package such as `@mcpc-tech/aiyo-acp`
 - `listModels`: optional model list resolver for `GET /v1/models`
 - `middleware`: request / params / result rewrite hooks
 - `plugins`: unified final-result plugins, including PTC
 - `transformTools`: provider-specific tool wrapping hook
 - `normalizeToolCall`: provider-specific tool-call normalization hook
 
-### `@yaonyan/acp2openai-acp`
+### `@mcpc-tech/aiyo-acp`
 
 Use the ACP package when you want the old **ACP-backed experience**:
 
 ```bash
-pnpm add @yaonyan/acp2openai-acp
+pnpm add @mcpc-tech/aiyo-acp
 ```
 
 ```ts
 import { Hono } from "hono";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-acp";
+import { createAiyo } from "@mcpc-tech/aiyo-acp";
 
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel: "default",
   defaultACPConfig: {
     command: "codebuddy",
@@ -101,19 +101,19 @@ The ACP package injects:
 
 It also still supports request-level ACP config through `extra_body.acpConfig`.
 
-### `@yaonyan/acp2openai-ptc`
+### `@mcpc-tech/aiyo-ptc`
 
 Use the PTC package when you want **programmatic tool calling**:
 
 ```bash
-pnpm add @yaonyan/acp2openai-ptc
+pnpm add @mcpc-tech/aiyo-ptc
 ```
 
 ```ts
-import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
-import { createJavaScriptCodeExecutionPlugin } from "@yaonyan/acp2openai-ptc";
+import { createAiyo } from "@mcpc-tech/aiyo";
+import { createJavaScriptCodeExecutionPlugin } from "@mcpc-tech/aiyo-ptc";
 
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel: "gpt-4o-mini",
   runtimeFactory: ({ modelId }) => ({
     model: openai.chat(modelId || "gpt-4o-mini"),
@@ -163,7 +163,7 @@ pnpm run client:stream
 
 ## CLI launcher
 
-The workspace also ships `@yaonyan/acp2openai-cli`.
+The workspace also ships `@mcpc-tech/aiyo-cli`.
 
 From the repo root:
 
@@ -175,11 +175,11 @@ pnpm run launch claude
 
 ## Local config for the ACP-backed Hono example
 
-The basic Hono example reads `examples/hono-server/acp2openai.config.json` by default.
+The basic Hono example reads `examples/hono-server/aiyo.config.json` by default.
 You can override that with:
 
 ```bash
-export ACP2OPENAI_CONFIG=/path/to/config.json
+export AIYO_CONFIG=/path/to/config.json
 ```
 
 Example config:

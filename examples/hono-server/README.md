@@ -20,7 +20,7 @@ or explicitly:
 pnpm run example:hono:basic
 ```
 
-The basic server reads `examples/hono-server/acp2openai.config.json` through the root script.
+The basic server reads `examples/hono-server/aiyo.config.json` through the root script.
 
 ### PTC server
 

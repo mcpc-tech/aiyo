@@ -18,11 +18,11 @@ interface ParsedArgs {
 }
 
 function printHelp() {
-  console.log(`acp2openai CLI
+  console.log(`aiyo CLI
 
 Usage:
-  acp2openai launch opencode [options] [-- extra args]
-  acp2openai launch claude [options] [-- extra args]
+  aiyo launch opencode [options] [-- extra args]
+  aiyo launch claude [options] [-- extra args]
 
 Supported integrations:
   - opencode
@@ -128,9 +128,9 @@ async function runLaunch(parsed: ParsedArgs): Promise<void> {
     cwd: parsed.cwd,
   });
 
-  console.error(`[acp2openai-cli] Starting proxy at http://${config.host}:${config.port}`);
-  console.error(`[acp2openai-cli] ACP runtime: ${config.acpCommand} ${config.acpArgs.join(" ")}`);
-  console.error(`[acp2openai-cli] Launch target: ${integration}`);
+  console.error(`[aiyo-cli] Starting proxy at http://${config.host}:${config.port}`);
+  console.error(`[aiyo-cli] ACP runtime: ${config.acpCommand} ${config.acpArgs.join(" ")}`);
+  console.error(`[aiyo-cli] Launch target: ${integration}`);
 
   const server = await startProxyServer(config);
 
@@ -174,6 +174,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`[acp2openai-cli] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[aiyo-cli] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });

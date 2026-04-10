@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { runInteractiveCommand } from "./process-utils.js";
 
-const PROVIDER_ID = "acp2openai";
-const MODEL_MARKER = "_acp2openaiLaunch";
+const PROVIDER_ID = "aiyo";
+const MODEL_MARKER = "_aiyo_launch";
 
 interface OpenCodeLaunchOptions {
   baseURL: string;
@@ -84,7 +84,7 @@ function updateConfig(configPath: string, baseURL: string, model: string) {
 
   provider[PROVIDER_ID] = {
     npm: "@ai-sdk/openai-compatible",
-    name: "ACP2OpenAI",
+    name: "AiyoAdapter",
     options: {
       baseURL: `${baseURL}/v1`,
     },

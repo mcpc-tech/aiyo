@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { ACP2OpenAI, type OpenAIChatCompletionRequest } from "./index.js";
+import { AiyoAdapter, type OpenAIChatCompletionRequest } from "./index.js";
 
 /**
  * Integration Tests - Real ACP Connection
@@ -16,7 +16,7 @@ describe("Integration Tests - Real ACP Connection", () => {
 
   const runIfACPAvailable = hasClaudeAgentACP ? it : it.skip;
 
-  const adapter = new ACP2OpenAI({
+  const adapter = new AiyoAdapter({
     defaultModel: "default", // Use a valid ACP model
     defaultACPConfig: {
       command: "claude-agent-acp",
@@ -49,7 +49,7 @@ describe("Integration Tests - Real ACP Connection", () => {
       expect(data.data[0]).toMatchObject({
         id: expect.any(String),
         object: "model",
-        owned_by: "acp2openai",
+        owned_by: "aiyo",
       });
 
       console.log("✓ Models list:", data.data.map((m: { id: string }) => m.id).join(", "));

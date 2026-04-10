@@ -1,6 +1,6 @@
 # Programmatic Tool Calling (PTC) Architecture
 
-This document describes the architecture of **programmatic tool calling (PTC)** in `acp2openai`.
+This document describes the architecture of **programmatic tool calling (PTC)** in `aiyo`.
 
 The core idea is:
 
@@ -99,7 +99,7 @@ PTC is split into three layers:
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Adapter as ACP2OpenAI
+    participant Adapter as Aiyo
     participant Orchestrator as PTC Orchestrator
     participant Sandbox as Sandbox Runtime
     participant ToolRunner as External Tool Executor

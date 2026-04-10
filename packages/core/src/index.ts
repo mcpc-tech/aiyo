@@ -1,5 +1,5 @@
 /**
- * ACP2OpenAI core adapter — bridges OpenAI-compatible endpoints to AI SDK providers.
+ * AiyoAdapter core adapter — bridges OpenAI-compatible endpoints to AI SDK providers.
  *
  * Implements three API surfaces:
  * - Chat Completions   @see https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
@@ -30,27 +30,27 @@ import type {
   OpenAITool,
   OpenAIToolCall,
   OpenAIExtraBody,
-  ACP2OpenAIEndpoint,
-  ACP2OpenAICallType,
-  ACP2OpenAIToolChoiceValue,
-  ACP2OpenAIModelCallParams,
+  AiyoEndpoint,
+  AiyoCallType,
+  AiyoToolChoiceValue,
+  AiyoModelCallParams,
   ACP2ProviderRuntime,
   ACP2RuntimeFactoryContext,
   ACP2RuntimeFactory,
   ACP2ToolTransformer,
   ACP2ToolCallNormalizer,
   ACP2ListModelsResolver,
-  ACP2OpenAIResultEventType,
-  ACP2OpenAIResultMutation,
-  ACP2OpenAIUsage,
+  AiyoResultEventType,
+  AiyoResultMutation,
+  AiyoUsage,
   RawToolCall,
-  ACP2OpenAIFinalResult,
-  ACP2OpenAIRunModelOptions,
-  ACP2OpenAIResultHandlerContext,
-  ACP2OpenAIResultHandler,
-  ACP2OpenAIPlugin,
-  ACP2OpenAIMiddlewareContext,
-  ACP2OpenAIMiddleware,
+  AiyoFinalResult,
+  AiyoRunModelOptions,
+  AiyoResultHandlerContext,
+  AiyoResultHandler,
+  AiyoPlugin,
+  AiyoMiddlewareContext,
+  AiyoMiddleware,
   OpenAIChatCompletionRequest,
   OpenAIChatCompletionResponse,
   OpenAIStreamChunk,
@@ -82,7 +82,7 @@ import type {
   AnthropicMessagesRequest,
   AnthropicStopReason,
   AnthropicMessageResponse,
-  ACP2OpenAIConfig,
+  AiyoConfig,
 } from "./types.js";
 import * as ResponsesAdapter from "./responses.js";
 import * as AnthropicAdapter from "./anthropic.js";
@@ -103,7 +103,7 @@ type OpenAIFinishReason = "stop" | "length" | "tool_calls" | "content_filter" | 
 type RuntimeContext = ACP2ProviderRuntime & {
   modelName: string;
   tools: Record<string, any> | undefined;
-  toolChoice: ACP2OpenAIToolChoiceValue | undefined;
+  toolChoice: AiyoToolChoiceValue | undefined;
   allowedToolNames: Set<string>;
   forcedToolName?: string;
 };
@@ -111,12 +111,12 @@ type RuntimeContext = ACP2ProviderRuntime & {
 type ToolSelectionContext = Pick<RuntimeContext, "allowedToolNames" | "forcedToolName">;
 
 type PreparedChatInvocation = {
-  endpoint: ACP2OpenAIEndpoint;
-  callType: ACP2OpenAICallType;
+  endpoint: AiyoEndpoint;
+  callType: AiyoCallType;
   originalRequest: OpenAIChatCompletionRequest | OpenAIResponsesRequest | AnthropicMessagesRequest;
   request: OpenAIChatCompletionRequest;
   runtime: RuntimeContext;
-  params: ACP2OpenAIModelCallParams;
+  params: AiyoModelCallParams;
   toolSelection: ToolSelectionContext;
 };
 
@@ -124,19 +124,19 @@ type PreparedChatInvocation = {
 // Core adapter class
 // ─────────────────────────────────────────────────────────────────────────────
 
-export class ACP2OpenAI {
-  private config: ACP2OpenAIConfig;
+export class AiyoAdapter {
+  private config: AiyoConfig;
 
-  constructor(config: ACP2OpenAIConfig = {}) {
+  constructor(config: AiyoConfig = {}) {
     this.config = config;
   }
 
-  private getPlugins(): ACP2OpenAIPlugin[] {
+  private getPlugins(): AiyoPlugin[] {
     if (!this.config.plugins) return [];
     return Array.isArray(this.config.plugins) ? this.config.plugins : [this.config.plugins];
   }
 
-  private getMiddlewares(): ACP2OpenAIMiddleware[] {
+  private getMiddlewares(): AiyoMiddleware[] {
     const configured = !this.config.middleware
       ? []
       : Array.isArray(this.config.middleware)
@@ -151,7 +151,7 @@ export class ACP2OpenAI {
     return [...configured, ...fromPlugins];
   }
 
-  private getResultHandlers(): ACP2OpenAIResultHandler[] {
+  private getResultHandlers(): AiyoResultHandler[] {
     return this.getPlugins().flatMap((plugin) => {
       if (!plugin.onResult) return [];
       return Array.isArray(plugin.onResult) ? plugin.onResult : [plugin.onResult];
@@ -170,7 +170,7 @@ export class ACP2OpenAI {
     return JSON.parse(JSON.stringify(value)) as T;
   }
 
-  private async runMiddleware(context: ACP2OpenAIMiddlewareContext): Promise<void> {
+  private async runMiddleware(context: AiyoMiddlewareContext): Promise<void> {
     for (const middleware of this.getMiddlewares()) {
       await middleware(context);
     }
@@ -179,7 +179,7 @@ export class ACP2OpenAI {
   private buildModelCallParams(
     req: OpenAIChatCompletionRequest,
     runtime: RuntimeContext,
-  ): ACP2OpenAIModelCallParams {
+  ): AiyoModelCallParams {
     return {
       model: runtime.model,
       messages: this.convertMessages(req.messages),
@@ -237,7 +237,7 @@ ${toolList}
     );
   }
 
-  private buildToolSelectionFromParams(params: ACP2OpenAIModelCallParams): ToolSelectionContext {
+  private buildToolSelectionFromParams(params: AiyoModelCallParams): ToolSelectionContext {
     const allowedToolNames = new Set<string>(Object.keys(params.tools ?? {}));
     let forcedToolName: string | undefined;
 
@@ -263,8 +263,8 @@ ${toolList}
     originalRequest,
     request,
   }: {
-    endpoint: ACP2OpenAIEndpoint;
-    callType: ACP2OpenAICallType;
+    endpoint: AiyoEndpoint;
+    callType: AiyoCallType;
     originalRequest:
       | OpenAIChatCompletionRequest
       | OpenAIResponsesRequest
@@ -311,8 +311,8 @@ ${toolList}
 
   private async mutateStreamResult(
     invocation: PreparedChatInvocation,
-    result: ACP2OpenAIResultMutation,
-  ): Promise<ACP2OpenAIResultMutation> {
+    result: AiyoResultMutation,
+  ): Promise<AiyoResultMutation> {
     const mutableResult = this.cloneRequest(result);
 
     await this.runMiddleware({
@@ -332,8 +332,8 @@ ${toolList}
   private async runModelFromResultHandler(
     invocation: PreparedChatInvocation,
     request: OpenAIChatCompletionRequest,
-    options?: ACP2OpenAIRunModelOptions,
-  ): Promise<ACP2OpenAIFinalResult> {
+    options?: AiyoRunModelOptions,
+  ): Promise<AiyoFinalResult> {
     const nestedInvocation = await this.prepareChatInvocation({
       endpoint: invocation.endpoint,
       callType: options?.callType ?? "streamText",
@@ -348,8 +348,8 @@ ${toolList}
 
   private async applyResultHandlers(
     invocation: PreparedChatInvocation,
-    result: ACP2OpenAIFinalResult,
-  ): Promise<{ result: ACP2OpenAIFinalResult; overridden: boolean }> {
+    result: AiyoFinalResult,
+  ): Promise<{ result: AiyoFinalResult; overridden: boolean }> {
     if (!this.hasResultHandlers()) {
       return {
         result: this.cloneRequest(result),
@@ -361,7 +361,7 @@ ${toolList}
     let overridden = false;
 
     for (const handler of this.getResultHandlers()) {
-      const context: ACP2OpenAIResultHandlerContext = {
+      const context: AiyoResultHandlerContext = {
         endpoint: invocation.endpoint,
         callType: invocation.callType,
         stream: invocation.callType === "streamText",
@@ -396,10 +396,10 @@ ${toolList}
   private async runPreparedModelResult(
     invocation: PreparedChatInvocation,
     applyPlugins = true,
-  ): Promise<ACP2OpenAIFinalResult> {
+  ): Promise<AiyoFinalResult> {
     try {
       const result = await generateText(invocation.params);
-      let finalResult: ACP2OpenAIFinalResult = {
+      let finalResult: AiyoFinalResult = {
         text: result.text ?? null,
         toolCalls: this.pickToolCalls(result.toolCalls, invocation.toolSelection),
         finishReason: result.finishReason,
@@ -428,8 +428,8 @@ ${toolList}
 
   private async buildRuntime(
     req: OpenAIChatCompletionRequest,
-    endpoint: ACP2OpenAIEndpoint,
-    callType: ACP2OpenAICallType,
+    endpoint: AiyoEndpoint,
+    callType: AiyoCallType,
   ): Promise<RuntimeContext> {
     const modelId = this.resolveModelId(req);
     const requestTools = this.convertTools(req.tools);
@@ -799,7 +799,7 @@ ${toolList}
         id,
         object: "model",
         created,
-        owned_by: "acp2openai",
+        owned_by: "aiyo",
       })),
     };
   }
@@ -1188,7 +1188,7 @@ ${toolList}
 
   private toChatCompletionResponse(
     invocation: PreparedChatInvocation,
-    result: ACP2OpenAIFinalResult,
+    result: AiyoFinalResult,
   ): OpenAIChatCompletionResponse {
     const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
     const created = Math.floor(Date.now() / 1000);
@@ -1231,7 +1231,7 @@ ${toolList}
   }
 
   private async collectPreparedStreamResult(invocation: PreparedChatInvocation): Promise<{
-    result: ACP2OpenAIFinalResult;
+    result: AiyoFinalResult;
     textDeltas: string[];
     overridden: boolean;
   }> {
@@ -1286,7 +1286,7 @@ ${toolList}
         err?.name === "AI_NoOutputGeneratedError" ||
         err?.constructor?.name === "NoOutputGeneratedError"
       ) {
-        const emptyResult: ACP2OpenAIFinalResult = {
+        const emptyResult: AiyoFinalResult = {
           text: null,
           toolCalls: [],
           finishReason: "other",
@@ -1305,7 +1305,7 @@ ${toolList}
 
   private async *streamOpenAIFromFinalResult(
     invocation: PreparedChatInvocation,
-    result: ACP2OpenAIFinalResult,
+    result: AiyoFinalResult,
     textDeltas?: string[],
   ): AsyncIterable<string> {
     const id = `chatcmpl-${Math.random().toString(36).slice(2, 15)}`;
@@ -1655,7 +1655,7 @@ ${toolList}
 
   private async *streamAnthropicFromFinalResult(
     modelName: string,
-    result: ACP2OpenAIFinalResult,
+    result: AiyoFinalResult,
     textDeltas?: string[],
   ): AsyncIterable<string> {
     const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
@@ -2087,8 +2087,8 @@ ${toolList}
 /**
  * Convenience factory function
  */
-export function createACP2OpenAI(config?: ACP2OpenAIConfig): ACP2OpenAI {
-  return new ACP2OpenAI(config);
+export function createAiyo(config?: AiyoConfig): AiyoAdapter {
+  return new AiyoAdapter(config);
 }
 
 export {

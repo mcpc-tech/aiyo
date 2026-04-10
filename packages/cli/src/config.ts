@@ -34,14 +34,14 @@ export interface LaunchOverrides {
 
 function loadFileConfig(): FileConfig {
   const configPath = resolve(
-    process.env.ACP2OPENAI_CONFIG || "examples/hono-server/acp2openai.config.json",
+    process.env.AIYO_CONFIG || "examples/hono-server/aiyo.config.json",
   );
   if (!existsSync(configPath)) return {};
 
   try {
     return JSON.parse(readFileSync(configPath, "utf-8")) as FileConfig;
   } catch (error) {
-    console.warn(`[acp2openai-cli] Failed to parse config file ${configPath}:`, error);
+    console.warn(`[aiyo-cli] Failed to parse config file ${configPath}:`, error);
     return {};
   }
 }

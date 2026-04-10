@@ -1,14 +1,14 @@
 import {
-  ACP2OpenAI as CoreACP2OpenAI,
+  AiyoAdapter as CoreAiyoAdapter,
   type ACP2ListModelsResolver,
-  type ACP2OpenAIConfig as CoreACP2OpenAIConfig,
+  type AiyoConfig as CoreAiyoConfig,
   type ACP2ProviderRuntime,
   type ACP2RuntimeFactory,
   type ACP2ToolCallNormalizer,
   type ACP2ToolTransformer,
   type OpenAIChatCompletionRequest,
   type RawToolCall,
-} from "@yaonyan/acp2openai-compatible";
+} from "@mcpc-tech/aiyo";
 import {
   ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME,
   acpTools,
@@ -16,8 +16,8 @@ import {
   type ACPProviderSettings,
 } from "@mcpc-tech/acp-ai-provider";
 
-export interface ACP2OpenAIConfig extends Omit<
-  CoreACP2OpenAIConfig,
+export interface AiyoConfig extends Omit<
+  CoreAiyoConfig,
   "runtimeFactory" | "listModels" | "transformTools" | "normalizeToolCall"
 > {
   defaultACPConfig?: ACPProviderSettings;
@@ -142,7 +142,7 @@ export function createACPListModelsResolver(
   };
 }
 
-function enhanceConfig(config: ACP2OpenAIConfig = {}): CoreACP2OpenAIConfig {
+function enhanceConfig(config: AiyoConfig = {}): CoreAiyoConfig {
   return {
     ...config,
     runtimeFactory: config.runtimeFactory ?? createACPRuntimeFactory(config.defaultACPConfig),
@@ -154,15 +154,15 @@ function enhanceConfig(config: ACP2OpenAIConfig = {}): CoreACP2OpenAIConfig {
   };
 }
 
-export class ACP2OpenAI extends CoreACP2OpenAI {
-  constructor(config: ACP2OpenAIConfig = {}) {
+export class AiyoAdapter extends CoreAiyo {
+  constructor(config: AiyoConfig = {}) {
     super(enhanceConfig(config));
   }
 }
 
-export function createACP2OpenAI(config?: ACP2OpenAIConfig): ACP2OpenAI {
-  return new ACP2OpenAI(config);
+export function createAiyo(config?: AiyoConfig): AiyoAdapter {
+  return new AiyoAdapter(config);
 }
 
 export type { ACPProviderSettings };
-export * from "@yaonyan/acp2openai-compatible";
+export * from "@mcpc-tech/aiyo";

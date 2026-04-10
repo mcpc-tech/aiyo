@@ -1,7 +1,7 @@
 {
-  "name": "@yaonyan/acp2openai-acp",
+  "name": "@mcpc-tech/aiyo-acp",
   "version": "0.1.0",
-  "description": "ACP runtime integration package for acp2openai-compatible",
+  "description": "ACP runtime integration package for aiyo-compatible",
   "license": "MIT",
   "files": [
     "dist",
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@mcpc-tech/acp-ai-provider": "^0.3.1",
-    "@yaonyan/acp2openai-compatible": "workspace:*"
+    "@mcpc-tech/aiyo": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

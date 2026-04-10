@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { Hono } from "hono";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
+import { createAiyo } from "@mcpc-tech/aiyo";
 
 for (const envPath of [
   resolve(import.meta.dirname, ".env"),
@@ -28,7 +28,7 @@ const apiKey = process.env.OPENAI_API_KEY || "dummy";
 const defaultModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 const openai = createOpenAI({ baseURL, apiKey });
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel,
   runtimeFactory: ({ modelId }) => ({
     model: openai.chat(modelId || defaultModel),
@@ -40,7 +40,7 @@ const app = new Hono();
 
 app.get("/", (c) =>
   c.json({
-    name: "acp2openai-hono-basic",
+    name: "aiyo-hono-basic",
     mode: "basic",
     provider: baseURL,
     model: defaultModel,

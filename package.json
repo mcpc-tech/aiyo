@@ -1,5 +1,5 @@
 {
-  "name": "@yaonyan/acp2openai-compatible",
+  "name": "@mcpc-tech/aiyo",
   "version": "0.1.0",
   "description": "Provider-agnostic OpenAI/Anthropic-compatible adapter built on the AI SDK, with optional ACP and PTC integration packages.",
   "keywords": [
@@ -22,7 +22,7 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yaonyan/acp2openai-compatible.git"
+    "url": "git+https://github.com/yaonyan/aiyo-compatible.git"
   },
   "files": [
     "dist",
@@ -40,7 +40,7 @@
     }
   },
   "scripts": {
-    "build": "pnpm --filter @yaonyan/acp2openai-compatible --if-present run build:core",
+    "build": "pnpm --filter @mcpc-tech/aiyo --if-present run build:core",
     "build:core": "tsdown && tsc -p packages/core/tsconfig.json --emitDeclarationOnly && cp packages/core/dist/packages/core/src/index.d.ts dist/index.d.ts 2>/dev/null || true",
     "build:workspace": "pnpm -r --if-present build",
     "dev": "tsdown --watch",
@@ -57,17 +57,17 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "example:hono": "ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json pnpm --filter acp2openai-example-hono-server dev",
-    "example:hono:basic": "ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json pnpm --filter acp2openai-example-hono-server basic",
-    "example:hono:ptc": "pnpm --filter acp2openai-example-hono-server ptc",
-    "example:express": "pnpm --filter acp2openai-example-express-server dev",
-    "client:stream": "pnpm --filter acp2openai-example-ai-sdk-client stream",
-    "client:responses": "pnpm --filter acp2openai-example-ai-sdk-client responses",
-    "client:anthropic": "pnpm --filter acp2openai-example-ai-sdk-client anthropic",
-    "cli:build": "pnpm --filter @yaonyan/acp2openai-cli build",
-    "cli:dev": "pnpm --filter @yaonyan/acp2openai-cli dev",
+    "example:hono": "AIYO_CONFIG=examples/hono-server/aiyo.config.json pnpm --filter aiyo-example-hono-server dev",
+    "example:hono:basic": "AIYO_CONFIG=examples/hono-server/aiyo.config.json pnpm --filter aiyo-example-hono-server basic",
+    "example:hono:ptc": "pnpm --filter aiyo-example-hono-server ptc",
+    "example:express": "pnpm --filter aiyo-example-express-server dev",
+    "client:stream": "pnpm --filter aiyo-example-ai-sdk-client stream",
+    "client:responses": "pnpm --filter aiyo-example-ai-sdk-client responses",
+    "client:anthropic": "pnpm --filter aiyo-example-ai-sdk-client anthropic",
+    "cli:build": "pnpm --filter @mcpc-tech/aiyo-cli build",
+    "cli:dev": "pnpm --filter @mcpc-tech/aiyo-cli dev",
     "launch": "node scripts/launch-cli.mjs",
-    "gateway:start": "bash scripts/start-acp2openai.sh",
+    "gateway:start": "bash scripts/start-aiyo.sh",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {

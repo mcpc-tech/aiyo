@@ -1,12 +1,12 @@
 {
-  "name": "@yaonyan/acp2openai-compatible",
+  "name": "@mcpc-tech/aiyo",
   "version": "0.1.0",
   "description": "Provider-agnostic OpenAI/Anthropic-compatible adapter built on the AI SDK, with optional ACP and PTC integration packages.",
   "license": "MIT",
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yaonyan/acp2openai-compatible.git"
+    "url": "git+https://github.com/yaonyan/aiyo-compatible.git"
   },
   "files": [
     "dist",

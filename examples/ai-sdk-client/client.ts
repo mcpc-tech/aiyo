@@ -1,5 +1,5 @@
 /**
- * AI SDK client that talks to the local acp2openai endpoint
+ * AI SDK client that talks to the local aiyo endpoint
  * with multiple test tools.
  *
  * Usage:
@@ -252,7 +252,7 @@ const tools = {
 };
 
 async function main() {
-  console.log("=== AI SDK Client → acp2openai endpoint (stream) ===\n");
+  console.log("=== AI SDK Client → aiyo endpoint (stream) ===\n");
   console.log("Available tools:", Object.keys(tools).join(", "));
   console.log();
 

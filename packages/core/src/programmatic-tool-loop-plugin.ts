@@ -5,9 +5,9 @@ import {
   type CodeExecutionRuntimeHandle,
 } from "./code-execution-runtime.js";
 import type {
-  ACP2OpenAIFinalResult,
-  ACP2OpenAIPlugin,
-  ACP2OpenAIMiddleware,
+  AiyoFinalResult,
+  AiyoPlugin,
+  AiyoMiddleware,
   OpenAIChatCompletionRequest,
 } from "./index.js";
 import type { ChatCompletionToolChoiceOption } from "openai/resources/chat/completions";
@@ -21,7 +21,7 @@ export interface ProgrammaticToolLoopToolCall {
 export interface ProgrammaticToolLoopMatchContext {
   iteration: number;
   request: OpenAIChatCompletionRequest;
-  result: ACP2OpenAIFinalResult;
+  result: AiyoFinalResult;
 }
 
 export interface ProgrammaticToolLoopExecuteContext extends ProgrammaticToolLoopMatchContext {
@@ -35,7 +35,7 @@ export interface ProgrammaticToolLoopToolResultStep {
 
 export interface ProgrammaticToolLoopFinalResultStep {
   type: "final-result";
-  result: ACP2OpenAIFinalResult;
+  result: AiyoFinalResult;
 }
 
 export type ProgrammaticToolLoopStepResult =
@@ -203,7 +203,7 @@ function normalizeToolCall(toolCall: any): ProgrammaticToolLoopToolCall | undefi
 }
 
 function toAssistantToolCallMessage(
-  result: ACP2OpenAIFinalResult,
+  result: AiyoFinalResult,
 ): OpenAIChatCompletionRequest["messages"][number] | undefined {
   const normalizedToolCalls = (result.toolCalls ?? [])
     .map((toolCall) => normalizeToolCall(toolCall))
@@ -232,7 +232,7 @@ function defaultSerializeToolResult(output: unknown): string {
   return JSON.stringify(output ?? null);
 }
 
-const RESUME_SESSION_ID_FIELD = "__acp2openaiCodeExecutionResumeSessionId";
+const RESUME_SESSION_ID_FIELD = "__aiyo_resume_session_id";
 
 function setResumeSessionId(request: OpenAIChatCompletionRequest, executionId: string): void {
   (request as OpenAIChatCompletionRequest & Record<string, unknown>)[RESUME_SESSION_ID_FIELD] =
@@ -278,7 +278,7 @@ function generateId(): string {
 
 export function createProgrammaticToolLoopPlugin(
   config: ProgrammaticToolLoopPluginConfig,
-): ACP2OpenAIPlugin {
+): AiyoPlugin {
   const maxIterations = Math.max(1, config.maxIterations ?? 8);
   const match =
     config.match ??
@@ -548,7 +548,7 @@ function buildCodeExecutionToolDefinition(
  */
 export function createJavaScriptCodeExecutionPlugin(
   config: JavaScriptCodeExecutionPluginConfig,
-): ACP2OpenAIPlugin {
+): AiyoPlugin {
   const maxLogs = Math.max(1, config.maxLogs ?? 50);
   const timeoutMs = Math.max(1, config.timeoutMs ?? 30_000);
   const codeToolName = config.codeExecutionToolName ?? "code_execution";
@@ -559,7 +559,7 @@ export function createJavaScriptCodeExecutionPlugin(
 
   // ── request rewrite middleware ───────────────────────────────────────
 
-  const rewriteMiddleware: ACP2OpenAIMiddleware = (ctx) => {
+  const rewriteMiddleware: AiyoMiddleware = (ctx) => {
     if (ctx.phase !== "request" || !shouldRewrite) return;
 
     const originalTools = ctx.request.tools;
@@ -668,7 +668,7 @@ export function createJavaScriptCodeExecutionPlugin(
 
   // ── middleware: intercept incoming tool_result for a pending session ──
 
-  const resumeMiddleware: ACP2OpenAIMiddleware = (ctx) => {
+  const resumeMiddleware: AiyoMiddleware = (ctx) => {
     if (ctx.phase !== "request") return;
 
     const messages = ctx.request.messages;
@@ -891,7 +891,7 @@ export function createJavaScriptCodeExecutionPlugin(
 
 /**
  * Resume middleware factory. Call this once and pass the returned middleware
- * to the ACP2OpenAI config. It shares the session store with the plugin
+ * to the AiyoAdapter config. It shares the session store with the plugin
  * created by `createJavaScriptCodeExecutionPlugin`.
  *
  * NOTE: The plugin already includes this middleware internally, so you
@@ -901,6 +901,6 @@ export function createJavaScriptCodeExecutionPlugin(
 // Also keep the old helpers for backward compat
 export function createJavaScriptProgrammaticToolLoopPlugin(
   config: JavaScriptCodeExecutionPluginConfig,
-): ACP2OpenAIPlugin {
+): AiyoPlugin {
   return createJavaScriptCodeExecutionPlugin(config);
 }

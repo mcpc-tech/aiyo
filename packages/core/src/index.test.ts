@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  ACP2OpenAI,
+  AiyoAdapter,
   buildCodeExecutionSystemPrompt,
   createJavaScriptCodeExecutionPlugin,
   createProgrammaticToolLoopPlugin,
@@ -125,12 +125,12 @@ vi.mock("ai", () => {
   };
 });
 
-describe("ACP2OpenAI (high-value unit tests)", () => {
-  let adapter: ACP2OpenAI;
+describe("AiyoAdapter (high-value unit tests)", () => {
+  let adapter: AiyoAdapter;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    adapter = new ACP2OpenAI({
+    adapter = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -608,7 +608,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       messages: [{ role: "user", content: "hello" }],
     };
 
-    const adapterWithMiddleware = new ACP2OpenAI({
+    const adapterWithMiddleware = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -650,7 +650,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
   it("applies params-phase middleware to final streamText call params", async () => {
     const { streamText } = await import("ai");
 
-    const adapterWithMiddleware = new ACP2OpenAI({
+    const adapterWithMiddleware = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -695,7 +695,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
   });
 
   it("applies result-phase middleware to stream text deltas", async () => {
-    const adapterWithMiddleware = new ACP2OpenAI({
+    const adapterWithMiddleware = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -744,7 +744,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         }).then(resolve),
     } as any);
 
-    const adapterWithMiddleware = new ACP2OpenAI({
+    const adapterWithMiddleware = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -863,7 +863,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       ],
     } as any);
 
-    const adapterWithPlugin = new ACP2OpenAI({
+    const adapterWithPlugin = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -948,7 +948,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         }).then(resolve),
     } as any);
 
-    const adapterWithPlugin = new ACP2OpenAI({
+    const adapterWithPlugin = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -1040,7 +1040,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
           ],
         } as any);
 
-      const adapterWithLoopPlugin = new ACP2OpenAI({
+      const adapterWithLoopPlugin = new AiyoAdapter({
         defaultModel: "default",
         runtimeFactory: ({ request }) => ({
           model: "mocked-model",
@@ -1149,7 +1149,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         toolNames,
       });
 
-      return new ACP2OpenAI({
+      return new AiyoAdapter({
         defaultModel: "default",
         runtimeFactory: ({ request }) => ({
           model: "mocked-model",
@@ -1549,7 +1549,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
     const { generateText } = await import("ai");
     const seen: Array<{ phase: string; endpoint: string; callType: string }> = [];
 
-    const adapterWithMiddleware = new ACP2OpenAI({
+    const adapterWithMiddleware = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -1599,7 +1599,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
 
   it("converts responses function_call and function_call_output items into chat tool loop messages", async () => {
     const { generateText } = await import("ai");
-    const responsesAdapter = new ACP2OpenAI({
+    const responsesAdapter = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -1661,7 +1661,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
 
   it("maps responses text.format and returns SDK-friendly response fields", async () => {
     const { generateText } = await import("ai");
-    const responsesAdapter = new ACP2OpenAI({
+    const responsesAdapter = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -1703,7 +1703,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
   });
 
   it("streams responses events in OpenAI SDK compatible order", async () => {
-    const responsesAdapter = new ACP2OpenAI({
+    const responsesAdapter = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -1734,7 +1734,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
 
   it("maps tool-call responses into response.output function_call items", async () => {
     const { generateText } = await import("ai");
-    const responsesAdapter = new ACP2OpenAI({
+    const responsesAdapter = new AiyoAdapter({
       defaultModel: "default",
       runtimeFactory: ({ request }) => ({
         model: "mocked-model",
@@ -1790,7 +1790,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
     const { generateText } = await import("ai");
     const { createACPProvider } = await import("@mcpc-tech/acp-ai-provider");
 
-    const adapterWithRuntimeFactory = new ACP2OpenAI({
+    const adapterWithRuntimeFactory = new AiyoAdapter({
       defaultModel: "custom-default",
       runtimeFactory: ({ request }) => ({
         model: "custom-runtime-model",

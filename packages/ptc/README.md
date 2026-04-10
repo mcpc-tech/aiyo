@@ -1,25 +1,25 @@
-# @yaonyan/acp2openai-ptc
+# @mcpc-tech/aiyo-ptc
 
-Programmatic Tool Calling (PTC) package for `@yaonyan/acp2openai-compatible`.
+Programmatic Tool Calling (PTC) package for `@mcpc-tech/aiyo`.
 
 This package contains the JavaScript code-execution plugin, the lower-level programmatic tool loop helper, and the Deno-backed runtime factory used to keep execution state across multiple tool calls.
 
 ## Install
 
 ```bash
-pnpm add @yaonyan/acp2openai-ptc
+pnpm add @mcpc-tech/aiyo-ptc
 ```
 
 ## Quick start
 
 ```ts
 import { createOpenAI } from "@ai-sdk/openai";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
-import { createJavaScriptCodeExecutionPlugin } from "@yaonyan/acp2openai-ptc";
+import { createAiyo } from "@mcpc-tech/aiyo";
+import { createJavaScriptCodeExecutionPlugin } from "@mcpc-tech/aiyo-ptc";
 
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-const adapter = createACP2OpenAI({
+const adapter = createAiyo({
   defaultModel: "gpt-4o-mini",
   runtimeFactory: ({ modelId }) => ({
     model: openai.chat(modelId || "gpt-4o-mini"),
