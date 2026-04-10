@@ -1,20 +1,35 @@
 {
   "name": "@yaonyan/acp2openai-compatible",
   "version": "0.1.0",
-  "description": "OpenAI-compatible API adapter for ACP (Agent Client Protocol) providers using the AI SDK. Framework-agnostic with built-in adapters for Hono, Express, and Web Standards.",
-  "type": "module",
-  "packageManager": "pnpm@10.13.1",
+  "description": "Provider-agnostic OpenAI/Anthropic-compatible adapter built on the AI SDK, with optional ACP and PTC integration packages.",
+  "keywords": [
+    "acp",
+    "agent-client-protocol",
+    "ai-sdk",
+    "anthropic",
+    "anthropic-compatible",
+    "chat-completions",
+    "cloudflare-workers",
+    "express",
+    "hono",
+    "openai",
+    "openai-compatible",
+    "sse",
+    "streaming",
+    "vercel-ai-sdk"
+  ],
   "license": "MIT",
   "author": "",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yaonyan/acp2openai-compatible.git"
   },
-  "sideEffects": false,
   "files": [
     "dist",
     "README.md"
   ],
+  "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -25,12 +40,16 @@
     }
   },
   "scripts": {
-    "build": "tsdown && tsc -p tsconfig.build.json --emitDeclarationOnly",
+    "build": "pnpm --filter @yaonyan/acp2openai-compatible --if-present run build:core",
+    "build:core": "tsdown && tsc -p packages/core/tsconfig.json --emitDeclarationOnly && cp packages/core/dist/packages/core/src/index.d.ts dist/index.d.ts 2>/dev/null || true",
     "build:workspace": "pnpm -r --if-present build",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit",
-    "typecheck:workspace": "pnpm -r typecheck",
-    "lint": "tsc --noEmit",
+    "typecheck:workspace": "pnpm -r --if-present typecheck",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
@@ -51,25 +70,6 @@
     "gateway:start": "bash scripts/start-acp2openai.sh",
     "prepublishOnly": "pnpm run build"
   },
-  "keywords": [
-    "openai",
-    "openai-compatible",
-    "anthropic",
-    "anthropic-compatible",
-    "ai-sdk",
-    "acp",
-    "agent-client-protocol",
-    "express",
-    "hono",
-    "cloudflare-workers",
-    "vercel-ai-sdk",
-    "chat-completions",
-    "streaming",
-    "sse"
-  ],
-  "engines": {
-    "node": ">=18"
-  },
   "dependencies": {
     "ai": "^6.0.116",
     "openai": "^6.27.0",
@@ -83,6 +83,8 @@
     "@vitest/coverage-v8": "^4.0.18",
     "@vitest/ui": "^4.0.18",
     "openai": "^6.27.0",
+    "oxfmt": "^0.44.0",
+    "oxlint": "^1.59.0",
     "tsdown": "^0.21.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.2",
@@ -95,5 +97,9 @@
     "@agentclientprotocol/sdk": {
       "optional": true
     }
-  }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@10.13.1"
 }
