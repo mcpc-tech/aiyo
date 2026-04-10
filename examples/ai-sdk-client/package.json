@@ -4,10 +4,13 @@
   "type": "module",
   "scripts": {
     "stream": "tsx client.ts",
-    "generate": "tsx client-generate.ts"
+    "responses": "tsx client-responses.ts",
+    "anthropic": "tsx client-anthropic.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.68",
     "@ai-sdk/openai": "^3.0.52",
+    "@anthropic-ai/sdk": "^0.87.0",
     "ai": "^6.0.116",
     "zod": "^3.25.76"
   },

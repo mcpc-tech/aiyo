@@ -45,12 +45,14 @@ vi.mock("ai", () => {
   }));
 
   const streamText = vi.fn((params) => {
-    const resultPromise = Promise.resolve(generateText(params)).then((result) => ({
-      text: result?.text ?? null,
-      toolCalls: result?.toolCalls ?? [],
-      finishReason: result?.finishReason ?? "stop",
-      usage: result?.usage ?? defaultUsage,
-    }));
+    const resultPromise = Promise.resolve(generateText(params)).then(
+      (result) => ({
+        text: result?.text ?? null,
+        toolCalls: result?.toolCalls ?? [],
+        finishReason: result?.finishReason ?? "stop",
+        usage: result?.usage ?? defaultUsage,
+      }),
+    );
 
     return {
       textStream: (async function* () {
@@ -62,7 +64,10 @@ vi.mock("ai", () => {
       toolCalls: resultPromise.then((result) => result.toolCalls),
       finishReason: resultPromise.then((result) => result.finishReason),
       usage: resultPromise.then((result) => result.usage),
-      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+      then: (
+        resolve: (value: unknown) => unknown,
+        reject?: (reason: unknown) => unknown,
+      ) =>
         resultPromise.then(
           (result) =>
             resolve({
@@ -81,50 +86,50 @@ vi.mock("ai", () => {
     tool: vi.fn((def) => def),
     jsonSchema: vi.fn((schema) => schema),
     Output: {
-    text: vi.fn(() => ({
-      name: "text",
-      responseFormat: Promise.resolve({ type: "text" }),
-      parseCompleteOutput: vi.fn(async ({ text }: { text: string }) => text),
-      parsePartialOutput: vi.fn(async ({ text }: { text: string }) => ({
-        partial: text,
+      text: vi.fn(() => ({
+        name: "text",
+        responseFormat: Promise.resolve({ type: "text" }),
+        parseCompleteOutput: vi.fn(async ({ text }: { text: string }) => text),
+        parsePartialOutput: vi.fn(async ({ text }: { text: string }) => ({
+          partial: text,
+        })),
+        createElementStreamTransform: vi.fn(() => undefined),
       })),
-      createElementStreamTransform: vi.fn(() => undefined),
-    })),
-    json: vi.fn(() => ({
-      name: "json",
-      responseFormat: Promise.resolve({ type: "json" }),
-      parseCompleteOutput: vi.fn(async ({ text }: { text: string }) =>
-        JSON.parse(text),
-      ),
-      parsePartialOutput: vi.fn(async ({ text }: { text: string }) => {
-        try {
-          return { partial: JSON.parse(text) };
-        } catch {
-          return undefined;
-        }
-      }),
-      createElementStreamTransform: vi.fn(() => undefined),
-    })),
-    object: vi.fn(({ schema, name, description }: any) => ({
-      name: "object",
-      responseFormat: Promise.resolve({
-        type: "json",
-        ...(schema != null && { schema }),
-        ...(name != null && { name }),
-        ...(description != null && { description }),
-      }),
-      parseCompleteOutput: vi.fn(async ({ text }: { text: string }) =>
-        JSON.parse(text),
-      ),
-      parsePartialOutput: vi.fn(async ({ text }: { text: string }) => {
-        try {
-          return { partial: JSON.parse(text) };
-        } catch {
-          return undefined;
-        }
-      }),
-      createElementStreamTransform: vi.fn(() => undefined),
-    })),
+      json: vi.fn(() => ({
+        name: "json",
+        responseFormat: Promise.resolve({ type: "json" }),
+        parseCompleteOutput: vi.fn(async ({ text }: { text: string }) =>
+          JSON.parse(text),
+        ),
+        parsePartialOutput: vi.fn(async ({ text }: { text: string }) => {
+          try {
+            return { partial: JSON.parse(text) };
+          } catch {
+            return undefined;
+          }
+        }),
+        createElementStreamTransform: vi.fn(() => undefined),
+      })),
+      object: vi.fn(({ schema, name, description }: any) => ({
+        name: "object",
+        responseFormat: Promise.resolve({
+          type: "json",
+          ...(schema != null && { schema }),
+          ...(name != null && { name }),
+          ...(description != null && { description }),
+        }),
+        parseCompleteOutput: vi.fn(async ({ text }: { text: string }) =>
+          JSON.parse(text),
+        ),
+        parsePartialOutput: vi.fn(async ({ text }: { text: string }) => {
+          try {
+            return { partial: JSON.parse(text) };
+          } catch {
+            return undefined;
+          }
+        }),
+        createElementStreamTransform: vi.fn(() => undefined),
+      })),
     },
   };
 });
@@ -460,8 +465,12 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
 
     expect(firstSystemContent).toContain("existing system guidance");
     expect(firstSystemContent).toContain("## Request-scoped MCP tools");
-    expect(firstSystemContent.match(/## Request-scoped MCP tools/g)?.length).toBe(1);
-    expect(secondSystemContent.match(/## Request-scoped MCP tools/g)?.length).toBe(1);
+    expect(
+      firstSystemContent.match(/## Request-scoped MCP tools/g)?.length,
+    ).toBe(1);
+    expect(
+      secondSystemContent.match(/## Request-scoped MCP tools/g)?.length,
+    ).toBe(1);
   });
 
   it("unwraps ACP dynamic wrapper tool call to real tool name and args", async () => {
@@ -938,8 +947,14 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
     }
 
     const text = chunks
-      .filter((chunk) => chunk.startsWith("data: {") && chunk.includes("content"))
-      .map((chunk) => JSON.parse(chunk.replace("data: ", "")).choices[0].delta.content || "")
+      .filter(
+        (chunk) => chunk.startsWith("data: {") && chunk.includes("content"),
+      )
+      .map(
+        (chunk) =>
+          JSON.parse(chunk.replace("data: ", "")).choices[0].delta.content ||
+          "",
+      )
       .join("");
 
     expect(text).toBe("MOCKED RESPONSE TEXT");
@@ -1208,8 +1223,12 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       chunks.push(chunk);
     }
 
-    expect(chunks.some((chunk) => chunk.includes('"name":"tool_router"'))).toBe(false);
-    expect(chunks.some((chunk) => chunk.includes('"name":"lookup_weather"'))).toBe(true);
+    expect(chunks.some((chunk) => chunk.includes('"name":"tool_router"'))).toBe(
+      false,
+    );
+    expect(
+      chunks.some((chunk) => chunk.includes('"name":"lookup_weather"')),
+    ).toBe(true);
     expect(chunks[chunks.length - 1]).toBe("data: [DONE]\n\n");
   });
 
@@ -1375,7 +1394,9 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       ];
     }
 
-    function createExecutionRequest(prompt: string): OpenAIChatCompletionRequest {
+    function createExecutionRequest(
+      prompt: string,
+    ): OpenAIChatCompletionRequest {
       return {
         model: "default",
         messages: [{ role: "user", content: prompt }],
@@ -1588,7 +1609,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
             "code_exec_multi",
             [
               'const meta = await tools.read_file({ path: "/tmp/meta.json" });',
-              'const listing = await tools.list_dir({ path: meta.dir });',
+              "const listing = await tools.list_dir({ path: meta.dir });",
               "return listing;",
             ].join("\n"),
           ),
@@ -1610,7 +1631,8 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       const firstResponse = await adapterWithPlugin.handleChatCompletion(
         createExecutionRequest("inspect the project"),
       );
-      const firstBridgedCall = firstResponse.choices[0].message.tool_calls?.[0] as any;
+      const firstBridgedCall = firstResponse.choices[0].message
+        .tool_calls?.[0] as any;
       expect(firstBridgedCall?.function.name).toBe("read_file");
       expect(JSON.parse(firstBridgedCall.function.arguments)).toEqual({
         path: "/tmp/meta.json",
@@ -1624,7 +1646,8 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
         ),
       );
       expect(secondResponse.choices[0].finish_reason).toBe("tool_calls");
-      const secondBridgedCall = secondResponse.choices[0].message.tool_calls?.[0] as any;
+      const secondBridgedCall = secondResponse.choices[0].message
+        .tool_calls?.[0] as any;
       expect(secondBridgedCall?.function.name).toBe("list_dir");
       expect(JSON.parse(secondBridgedCall.function.arguments)).toEqual({
         path: "/tmp/project",
@@ -1688,8 +1711,10 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       const secondStart = await adapterWithPlugin.handleChatCompletion(
         createExecutionRequest("read file B"),
       );
-      const firstBridgedCall = firstStart.choices[0].message.tool_calls?.[0] as any;
-      const secondBridgedCall = secondStart.choices[0].message.tool_calls?.[0] as any;
+      const firstBridgedCall = firstStart.choices[0].message
+        .tool_calls?.[0] as any;
+      const secondBridgedCall = secondStart.choices[0].message
+        .tool_calls?.[0] as any;
 
       const firstResumePromise = adapterWithPlugin.handleChatCompletion(
         createResumeRequest("read file A", firstBridgedCall, '"alpha"'),
@@ -1768,11 +1793,15 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
 
   it("runs middleware for responses requests and preserves endpoint context", async () => {
     const { generateText } = await import("ai");
-    const seen: Array<{ phase: string; endpoint: string; callType: string }> = [];
+    const seen: Array<{ phase: string; endpoint: string; callType: string }> =
+      [];
 
     const adapterWithMiddleware = new ACP2OpenAI({
       defaultModel: "default",
-      defaultACPConfig,
+      runtimeFactory: ({ request }) => ({
+        model: "mocked-model",
+        modelName: request.model ?? "default",
+      }),
       middleware: (ctx) => {
         seen.push({
           phase: ctx.phase,
@@ -1810,6 +1839,217 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
           phase: "params",
           endpoint: "responses",
           callType: "generateText",
+        }),
+      ]),
+    );
+  });
+
+  it("converts responses function_call and function_call_output items into chat tool loop messages", async () => {
+    const { generateText } = await import("ai");
+    const responsesAdapter = new ACP2OpenAI({
+      defaultModel: "default",
+      runtimeFactory: ({ request }) => ({
+        model: "mocked-model",
+        modelName: request.model ?? "default",
+      }),
+    });
+
+    const req: OpenAIResponsesRequest = {
+      model: "default",
+      input: [
+        {
+          type: "function_call",
+          call_id: "call_weather_1",
+          name: "lookup_weather",
+          arguments: '{"city":"Paris"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_weather_1",
+          output: '{"temperature":18}',
+        },
+      ],
+    };
+
+    await responsesAdapter.handleResponses(req);
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-call",
+                toolCallId: "call_weather_1",
+                toolName: "lookup_weather",
+                args: { city: "Paris" },
+              }),
+            ]),
+          }),
+          expect.objectContaining({
+            role: "tool",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-result",
+                toolCallId: "call_weather_1",
+                toolName: "tool",
+                output: {
+                  type: "json",
+                  value: { temperature: 18 },
+                },
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("maps responses text.format and returns SDK-friendly response fields", async () => {
+    const { generateText } = await import("ai");
+    const responsesAdapter = new ACP2OpenAI({
+      defaultModel: "default",
+      runtimeFactory: ({ request }) => ({
+        model: "mocked-model",
+        modelName: request.model ?? "default",
+      }),
+    });
+
+    const req: OpenAIResponsesRequest = {
+      model: "default",
+      input: "Return JSON please",
+      text: {
+        format: {
+          type: "json_schema",
+          name: "weather_summary",
+          schema: {
+            type: "object",
+            properties: {
+              city: { type: "string" },
+            },
+            required: ["city"],
+          },
+        },
+      },
+    };
+
+    const res = await responsesAdapter.handleResponses(req);
+
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: expect.any(Object),
+      }),
+    );
+    expect(res.object).toBe("response");
+    expect(res.output_text).toBe("Mocked response text");
+    expect(res.error).toBeNull();
+    expect(res.incomplete_details).toBeNull();
+    expect(res.usage.input_tokens_details.cached_tokens).toBe(0);
+    expect(res.usage.output_tokens_details.reasoning_tokens).toBe(0);
+  });
+
+  it("streams responses events in OpenAI SDK compatible order", async () => {
+    const responsesAdapter = new ACP2OpenAI({
+      defaultModel: "default",
+      runtimeFactory: ({ request }) => ({
+        model: "mocked-model",
+        modelName: request.model ?? "default",
+      }),
+    });
+
+    const req: OpenAIResponsesRequest = {
+      model: "default",
+      input: "stream hello",
+      stream: true,
+    };
+
+    const chunks: string[] = [];
+    for await (const chunk of responsesAdapter.handleResponsesStream(req)) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[0]).toContain("event: response.created");
+    expect(
+      chunks.some((chunk) =>
+        chunk.includes("event: response.output_item.added"),
+      ),
+    ).toBe(true);
+    expect(
+      chunks.some((chunk) =>
+        chunk.includes("event: response.content_part.added"),
+      ),
+    ).toBe(true);
+    expect(
+      chunks.some((chunk) =>
+        chunk.includes("event: response.output_text.delta"),
+      ),
+    ).toBe(true);
+    expect(
+      chunks.some((chunk) =>
+        chunk.includes("event: response.output_text.done"),
+      ),
+    ).toBe(true);
+    expect(
+      chunks.some((chunk) =>
+        chunk.includes("event: response.output_item.done"),
+      ),
+    ).toBe(true);
+    expect(
+      chunks.some((chunk) => chunk.includes("event: response.completed")),
+    ).toBe(true);
+    expect(chunks[chunks.length - 1]).toBe("data: [DONE]\n\n");
+  });
+
+  it("maps tool-call responses into response.output function_call items", async () => {
+    const { generateText } = await import("ai");
+    const responsesAdapter = new ACP2OpenAI({
+      defaultModel: "default",
+      runtimeFactory: ({ request }) => ({
+        model: "mocked-model",
+        modelName: request.model ?? "default",
+      }),
+    });
+
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: null,
+      finishReason: "tool-calls",
+      usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16 },
+      toolCalls: [
+        {
+          toolCallId: "call_lookup_1",
+          toolName: "lookup_weather",
+          input: { city: "Paris" },
+        },
+      ],
+    } as any);
+
+    const res = await responsesAdapter.handleResponses({
+      model: "default",
+      input: "Use the weather tool.",
+      tools: [
+        {
+          type: "function",
+          name: "lookup_weather",
+          parameters: {
+            type: "object",
+            properties: {
+              city: { type: "string" },
+            },
+          },
+        },
+      ],
+    });
+
+    expect(res.output_text).toBe("");
+    expect(res.output).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "function_call",
+          id: "call_lookup_1",
+          call_id: "call_lookup_1",
+          name: "lookup_weather",
+          arguments: JSON.stringify({ city: "Paris" }),
         }),
       ]),
     );
@@ -1973,9 +2213,9 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
     }
 
     expect(chunks[0]).toContain("event: message_start");
-    expect(chunks.some((chunk) => chunk.includes("event: content_block_start"))).toBe(
-      true,
-    );
+    expect(
+      chunks.some((chunk) => chunk.includes("event: content_block_start")),
+    ).toBe(true);
     expect(chunks.some((chunk) => chunk.includes('"type":"text_delta"'))).toBe(
       true,
     );

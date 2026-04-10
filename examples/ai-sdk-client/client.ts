@@ -270,7 +270,7 @@ async function main() {
   console.log();
 
   const result = streamText({
-    model: openai.chat("claude-sonnet-4.6"),
+    model: openai.chat("auto"),
     messages: [
       {
         role: "system",

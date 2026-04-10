@@ -187,20 +187,54 @@ export interface OpenAIChatCompletionRequest extends Omit<
   extra_body?: OpenAIExtraBody;
 }
 
+export interface OpenAIResponsesContentPart {
+  type?: string;
+  text?: string;
+  input_text?: string;
+  output_text?: string;
+  image_url?: string;
+  file_id?: string;
+  file_url?: string;
+  filename?: string;
+}
+
 export interface OpenAIResponsesInputMessage {
   type?: string;
   role?: "system" | "developer" | "user" | "assistant" | "tool";
-  content?:
-    | string
-    | Array<{
-        type?: string;
-        text?: string;
-        input_text?: string;
-        output_text?: string;
-      }>;
+  content?: string | OpenAIResponsesContentPart[];
+  output?: string | OpenAIResponsesContentPart[];
   tool_call_id?: string;
   call_id?: string;
+  id?: string;
+  name?: string;
+  arguments?: string;
+  status?: "in_progress" | "completed" | "incomplete";
 }
+
+export interface OpenAIResponsesFunctionCallItem {
+  type: "function_call";
+  call_id?: string;
+  id?: string;
+  name: string;
+  arguments: string;
+  role?: "assistant";
+  status?: "in_progress" | "completed" | "incomplete";
+}
+
+export interface OpenAIResponsesFunctionCallOutputItem {
+  type: "function_call_output";
+  call_id?: string;
+  tool_call_id?: string;
+  id?: string;
+  output?: string | OpenAIResponsesContentPart[];
+  content?: string | OpenAIResponsesContentPart[];
+  status?: "in_progress" | "completed" | "incomplete";
+}
+
+export type OpenAIResponsesInputItem =
+  | OpenAIResponsesInputMessage
+  | OpenAIResponsesFunctionCallItem
+  | OpenAIResponsesFunctionCallOutputItem;
 
 export interface OpenAIResponsesFunctionTool {
   type: "function";
@@ -220,9 +254,79 @@ export type OpenAIResponsesToolChoice =
   | { type: "tool"; name: string }
   | { type: "function"; function: { name: string } };
 
+export type OpenAIResponsesTextFormat =
+  | { type: "text" }
+  | { type: "json_object" }
+  | {
+      type: "json_schema";
+      name?: string;
+      description?: string;
+      schema?: Record<string, unknown>;
+      strict?: boolean;
+    };
+
+export interface OpenAIResponsesTextConfig {
+  format?: OpenAIResponsesTextFormat;
+  verbosity?: "low" | "medium" | "high" | null;
+}
+
+export interface OpenAIResponsesResponseMessageItem {
+  type: "message";
+  id: string;
+  role: "assistant";
+  status: "in_progress" | "completed" | "incomplete";
+  content: Array<{
+    type: "output_text";
+    text: string;
+    annotations: unknown[];
+  }>;
+}
+
+export interface OpenAIResponsesResponseFunctionCallItem {
+  type: "function_call";
+  id: string;
+  call_id: string;
+  name: string;
+  arguments: string;
+  status: "in_progress" | "completed" | "incomplete";
+}
+
+export interface OpenAIResponsesResponse {
+  id: string;
+  object: "response";
+  created_at: number;
+  status: "in_progress" | "completed" | "failed" | "incomplete";
+  model: string;
+  output_text: string;
+  error: { message: string; type?: string; code?: string | null } | null;
+  incomplete_details: Record<string, unknown> | null;
+  instructions: string | null;
+  metadata: Record<string, string> | null;
+  output: Array<
+    OpenAIResponsesResponseMessageItem | OpenAIResponsesResponseFunctionCallItem
+  >;
+  parallel_tool_calls: boolean;
+  temperature: number | null;
+  tool_choice: OpenAIResponsesToolChoice | "auto";
+  tools: OpenAIResponsesTool[];
+  top_p: number | null;
+  usage: {
+    input_tokens: number;
+    input_tokens_details: {
+      cached_tokens: number;
+    };
+    output_tokens: number;
+    output_tokens_details: {
+      reasoning_tokens: number;
+    };
+    total_tokens: number;
+  };
+  completed_at?: number | null;
+}
+
 export interface OpenAIResponsesRequest {
   model?: string;
-  input?: string | OpenAIResponsesInputMessage[];
+  input?: string | OpenAIResponsesInputItem[];
   instructions?: string;
   tools?: OpenAIResponsesTool[];
   tool_choice?: OpenAIResponsesToolChoice;
@@ -232,41 +336,11 @@ export interface OpenAIResponsesRequest {
   frequency_penalty?: number;
   presence_penalty?: number;
   stream?: boolean;
+  parallel_tool_calls?: boolean | null;
+  metadata?: Record<string, string> | null;
+  previous_response_id?: string | null;
+  text?: OpenAIResponsesTextConfig;
   extra_body?: OpenAIExtraBody;
-}
-
-export interface OpenAIResponsesResponse {
-  id: string;
-  object: "response";
-  created_at: number;
-  status: "completed";
-  model: string;
-  output: Array<
-    | {
-        type: "message";
-        id: string;
-        role: "assistant";
-        status: "completed";
-        content: Array<{
-          type: "output_text";
-          text: string;
-          annotations: unknown[];
-        }>;
-      }
-    | {
-        type: "function_call";
-        id: string;
-        call_id: string;
-        name: string;
-        arguments: string;
-        status: "completed";
-      }
-  >;
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    total_tokens: number;
-  };
 }
 
 export interface AnthropicTextBlock {
@@ -766,7 +840,9 @@ ${toolList}
   }
 
   private resolveModelId(req: OpenAIChatCompletionRequest): string | undefined {
-    const id = req.model || this.config.defaultModel;
+    const raw = req.model;
+    const id =
+      !raw || raw === "auto" ? this.config.defaultModel : raw;
     return id || undefined;
   }
 
@@ -888,14 +964,13 @@ ${toolList}
     };
   }
 
-  private stringifyResponsesInputContent(
-    content: OpenAIResponsesInputMessage["content"],
-  ): string {
+  private stringifyResponsesInputContent(content: unknown): string {
     if (typeof content === "string") return content;
     if (!Array.isArray(content)) return "";
 
     return content
       .map((part) => {
+        if (!this.isRecord(part)) return "";
         if (typeof part.text === "string") return part.text;
         if (typeof part.input_text === "string") return part.input_text;
         if (typeof part.output_text === "string") return part.output_text;
@@ -903,6 +978,47 @@ ${toolList}
       })
       .filter(Boolean)
       .join("\n");
+  }
+
+  private getResponsesToolCallId(
+    item: Partial<
+      Pick<OpenAIResponsesInputMessage, "call_id" | "tool_call_id" | "id">
+    >,
+  ): string {
+    return (
+      item.call_id ??
+      item.tool_call_id ??
+      item.id ??
+      `call_${Math.random().toString(36).slice(2, 15)}`
+    );
+  }
+
+  private convertResponsesTextConfig(
+    textConfig?: OpenAIResponsesTextConfig,
+  ): OpenAIChatCompletionRequest["response_format"] | undefined {
+    const format = textConfig?.format;
+    if (!format) return undefined;
+
+    switch (format.type) {
+      case "text":
+        return { type: "text" };
+      case "json_object":
+        return { type: "json_object" };
+      case "json_schema":
+        return {
+          type: "json_schema",
+          json_schema: {
+            name: format.name ?? "response",
+            ...(format.description != null && {
+              description: format.description,
+            }),
+            ...(format.schema != null && { schema: format.schema }),
+            ...(format.strict != null && { strict: format.strict }),
+          },
+        };
+      default:
+        return undefined;
+    }
   }
 
   private convertResponsesTools(
@@ -983,14 +1099,38 @@ ${toolList}
     if (!Array.isArray(input)) return messages;
 
     for (const item of input) {
-      const role = item?.role;
-      const content = this.stringifyResponsesInputContent(item?.content);
+      if (!this.isRecord(item)) continue;
 
-      if (item?.type === "function_call_output") {
+      const role = item.role;
+      const content = this.stringifyResponsesInputContent(item.content);
+      const outputContent = this.stringifyResponsesInputContent(
+        item.output ?? item.content,
+      );
+
+      if (item.type === "function_call" && typeof item.name === "string") {
+        messages.push({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: this.getResponsesToolCallId(item),
+              type: "function",
+              function: {
+                name: item.name,
+                arguments:
+                  typeof item.arguments === "string" ? item.arguments : "{}",
+              },
+            },
+          ],
+        });
+        continue;
+      }
+
+      if (item.type === "function_call_output") {
         messages.push({
           role: "tool",
-          tool_call_id: item.call_id ?? item.tool_call_id ?? "",
-          content,
+          tool_call_id: this.getResponsesToolCallId(item),
+          content: outputContent,
         });
         continue;
       }
@@ -998,8 +1138,8 @@ ${toolList}
       if (role === "tool") {
         messages.push({
           role: "tool",
-          tool_call_id: item.call_id ?? item.tool_call_id ?? "",
-          content,
+          tool_call_id: this.getResponsesToolCallId(item),
+          content: outputContent,
         });
         continue;
       }
@@ -1025,6 +1165,7 @@ ${toolList}
       messages: this.convertResponsesInputToMessages(req),
       tools: this.convertResponsesTools(req.tools),
       tool_choice: this.convertResponsesToolChoice(req.tool_choice),
+      response_format: this.convertResponsesTextConfig(req.text),
       temperature: req.temperature,
       max_tokens: req.max_output_tokens,
       top_p: req.top_p,
@@ -1038,13 +1179,18 @@ ${toolList}
   private toResponsesOutput(
     messageContent: string | null,
     toolCalls: OpenAIToolCall[] | undefined,
+    options?: {
+      messageId?: string;
+    },
   ): OpenAIResponsesResponse["output"] {
     const output: OpenAIResponsesResponse["output"] = [];
 
     if (messageContent && messageContent.length > 0) {
       output.push({
         type: "message",
-        id: `msg_${Math.random().toString(36).slice(2, 15)}`,
+        id:
+          options?.messageId ??
+          `msg_${Math.random().toString(36).slice(2, 15)}`,
         role: "assistant",
         status: "completed",
         content: [
@@ -1075,7 +1221,9 @@ ${toolList}
     if (output.length === 0) {
       output.push({
         type: "message",
-        id: `msg_${Math.random().toString(36).slice(2, 15)}`,
+        id:
+          options?.messageId ??
+          `msg_${Math.random().toString(36).slice(2, 15)}`,
         role: "assistant",
         status: "completed",
         content: [
@@ -1091,30 +1239,102 @@ ${toolList}
     return output;
   }
 
-  private mapChatToResponses(
-    chatResponse: OpenAIChatCompletionResponse,
-    responseId?: string,
+  private getResponsesOutputText(
+    output: OpenAIResponsesResponse["output"],
+  ): string {
+    return output
+      .filter(
+        (item): item is OpenAIResponsesResponseMessageItem =>
+          item.type === "message",
+      )
+      .flatMap((item) => item.content)
+      .filter((part) => part.type === "output_text")
+      .map((part) => part.text)
+      .join("\n");
+  }
+
+  private buildResponsesUsage(
+    usage?: OpenAIChatCompletionResponse["usage"],
+  ): OpenAIResponsesResponse["usage"] {
+    return {
+      input_tokens: usage?.prompt_tokens ?? 0,
+      input_tokens_details: {
+        cached_tokens: 0,
+      },
+      output_tokens: usage?.completion_tokens ?? 0,
+      output_tokens_details: {
+        reasoning_tokens: 0,
+      },
+      total_tokens: usage?.total_tokens ?? 0,
+    };
+  }
+
+  private buildResponsesResponse(
+    req: OpenAIResponsesRequest,
+    model: string,
+    createdAt: number,
+    output: OpenAIResponsesResponse["output"],
+    options?: {
+      responseId?: string;
+      status?: OpenAIResponsesResponse["status"];
+      completedAt?: number | null;
+      usage?: OpenAIChatCompletionResponse["usage"];
+      error?: OpenAIResponsesResponse["error"];
+      incompleteDetails?: OpenAIResponsesResponse["incomplete_details"];
+    },
   ): OpenAIResponsesResponse {
-    const id = responseId ?? `resp_${Math.random().toString(36).slice(2, 15)}`;
-    const message = chatResponse.choices[0]?.message;
-    const usage = chatResponse.usage;
+    const id =
+      options?.responseId ?? `resp_${Math.random().toString(36).slice(2, 15)}`;
 
     return {
       id,
       object: "response",
-      created_at: chatResponse.created,
-      status: "completed",
-      model: chatResponse.model,
-      output: this.toResponsesOutput(
-        message?.content ?? null,
-        this.coerceOpenAIToolCalls(message?.tool_calls),
-      ),
-      usage: {
-        input_tokens: usage?.prompt_tokens ?? 0,
-        output_tokens: usage?.completion_tokens ?? 0,
-        total_tokens: usage?.total_tokens ?? 0,
-      },
+      created_at: createdAt,
+      status: options?.status ?? "completed",
+      model,
+      output_text: this.getResponsesOutputText(output),
+      error: options?.error ?? null,
+      incomplete_details: options?.incompleteDetails ?? null,
+      instructions: req.instructions ?? null,
+      metadata: req.metadata ?? null,
+      output,
+      parallel_tool_calls: req.parallel_tool_calls ?? false,
+      temperature: req.temperature ?? null,
+      tool_choice: req.tool_choice ?? "auto",
+      tools: req.tools ?? [],
+      top_p: req.top_p ?? null,
+      usage: this.buildResponsesUsage(options?.usage),
+      completed_at: options?.completedAt ?? null,
     };
+  }
+
+  private mapChatToResponses(
+    chatResponse: OpenAIChatCompletionResponse,
+    req: OpenAIResponsesRequest,
+    options?: {
+      responseId?: string;
+      messageId?: string;
+    },
+  ): OpenAIResponsesResponse {
+    const message = chatResponse.choices[0]?.message;
+    const output = this.toResponsesOutput(
+      message?.content ?? null,
+      this.coerceOpenAIToolCalls(message?.tool_calls),
+      { messageId: options?.messageId },
+    );
+
+    return this.buildResponsesResponse(
+      req,
+      chatResponse.model,
+      chatResponse.created,
+      output,
+      {
+        responseId: options?.responseId,
+        status: "completed",
+        completedAt: chatResponse.created,
+        usage: chatResponse.usage,
+      },
+    );
   }
 
   private coerceOpenAIToolCalls(
@@ -2344,7 +2564,7 @@ ${toolList}
       request: chatReq,
     });
     const chatResponse = await this.runPreparedChatCompletion(invocation);
-    return this.mapChatToResponses(chatResponse);
+    return this.mapChatToResponses(chatResponse, req);
   }
 
   async *handleResponsesStream(
@@ -2364,18 +2584,17 @@ ${toolList}
     const createdAt = Math.floor(Date.now() / 1000);
     const modelName = invocation.runtime.modelName || "default";
     const messageId = `msg_${Math.random().toString(36).slice(2, 15)}`;
+    let sequenceNumber = 0;
+    const nextSequenceNumber = () => sequenceNumber++;
 
-    yield `event: response.created\ndata: ${JSON.stringify({
+    yield this.formatSSEEvent("response.created", {
       type: "response.created",
-      response: {
-        id: responseId,
-        object: "response",
-        created_at: createdAt,
+      sequence_number: nextSequenceNumber(),
+      response: this.buildResponsesResponse(req, modelName, createdAt, [], {
+        responseId,
         status: "in_progress",
-        model: modelName,
-        output: [],
-      },
-    })}\n\n`;
+      }),
+    });
 
     let fullText = "";
     let toolCalls: OpenAIToolCall[] = [];
@@ -2391,14 +2610,6 @@ ${toolList}
 
       if (typeof delta?.content === "string" && delta.content.length > 0) {
         fullText += delta.content;
-        yield `event: response.output_text.delta\ndata: ${JSON.stringify({
-          type: "response.output_text.delta",
-          response_id: responseId,
-          item_id: messageId,
-          output_index: 0,
-          content_index: 0,
-          delta: delta.content,
-        })}\n\n`;
       }
 
       if (delta?.tool_calls && delta.tool_calls.length > 0) {
@@ -2432,15 +2643,142 @@ ${toolList}
       service_tier: null,
     };
 
-    const finalResponse = this.mapChatToResponses(
-      finalChatResponse,
+    const finalResponse = this.mapChatToResponses(finalChatResponse, req, {
       responseId,
-    );
+      messageId,
+    });
+    const responseEvents: string[] = [];
 
-    yield `event: response.completed\ndata: ${JSON.stringify({
+    finalResponse.output.forEach((item, outputIndex) => {
+      if (item.type === "message") {
+        const outputTextPart = item.content[0] ?? {
+          type: "output_text",
+          text: "",
+          annotations: [],
+        };
+        const startedItem: OpenAIResponsesResponseMessageItem = {
+          ...item,
+          status: "in_progress",
+          content: [],
+        };
+
+        responseEvents.push(
+          this.formatSSEEvent("response.output_item.added", {
+            type: "response.output_item.added",
+            sequence_number: nextSequenceNumber(),
+            output_index: outputIndex,
+            item: startedItem,
+          }),
+          this.formatSSEEvent("response.content_part.added", {
+            type: "response.content_part.added",
+            sequence_number: nextSequenceNumber(),
+            output_index: outputIndex,
+            content_index: 0,
+            item_id: item.id,
+            part: {
+              type: "output_text",
+              text: "",
+              annotations: [],
+            },
+          }),
+        );
+
+        if (outputTextPart.text.length > 0) {
+          responseEvents.push(
+            this.formatSSEEvent("response.output_text.delta", {
+              type: "response.output_text.delta",
+              sequence_number: nextSequenceNumber(),
+              output_index: outputIndex,
+              content_index: 0,
+              item_id: item.id,
+              delta: outputTextPart.text,
+              logprobs: [],
+            }),
+          );
+        }
+
+        responseEvents.push(
+          this.formatSSEEvent("response.output_text.done", {
+            type: "response.output_text.done",
+            sequence_number: nextSequenceNumber(),
+            output_index: outputIndex,
+            content_index: 0,
+            item_id: item.id,
+            text: outputTextPart.text,
+            logprobs: [],
+          }),
+          this.formatSSEEvent("response.content_part.done", {
+            type: "response.content_part.done",
+            sequence_number: nextSequenceNumber(),
+            output_index: outputIndex,
+            content_index: 0,
+            item_id: item.id,
+            part: outputTextPart,
+          }),
+          this.formatSSEEvent("response.output_item.done", {
+            type: "response.output_item.done",
+            sequence_number: nextSequenceNumber(),
+            output_index: outputIndex,
+            item,
+          }),
+        );
+        return;
+      }
+
+      const startedItem: OpenAIResponsesResponseFunctionCallItem = {
+        ...item,
+        status: "in_progress",
+        arguments: "",
+      };
+
+      responseEvents.push(
+        this.formatSSEEvent("response.output_item.added", {
+          type: "response.output_item.added",
+          sequence_number: nextSequenceNumber(),
+          output_index: outputIndex,
+          item: startedItem,
+        }),
+      );
+
+      if (item.arguments.length > 0) {
+        responseEvents.push(
+          this.formatSSEEvent("response.function_call_arguments.delta", {
+            type: "response.function_call_arguments.delta",
+            sequence_number: nextSequenceNumber(),
+            output_index: outputIndex,
+            item_id: item.id,
+            delta: item.arguments,
+          }),
+        );
+      }
+
+      responseEvents.push(
+        this.formatSSEEvent("response.function_call_arguments.done", {
+          type: "response.function_call_arguments.done",
+          sequence_number: nextSequenceNumber(),
+          output_index: outputIndex,
+          item_id: item.id,
+          arguments: item.arguments,
+          name: item.name,
+        }),
+        this.formatSSEEvent("response.output_item.done", {
+          type: "response.output_item.done",
+          sequence_number: nextSequenceNumber(),
+          output_index: outputIndex,
+          item,
+        }),
+      );
+    });
+
+    for (const event of responseEvents) {
+      yield event;
+    }
+
+    yield this.formatSSEEvent("response.completed", {
       type: "response.completed",
+      sequence_number: nextSequenceNumber(),
       response: finalResponse,
-    })}\n\n`;
+    });
     yield "data: [DONE]\n\n";
   }
 
