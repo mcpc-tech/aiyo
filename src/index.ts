@@ -1,10 +1,4 @@
 import {
-  ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME,
-  acpTools,
-  createACPProvider,
-  type ACPProviderSettings,
-} from "@mcpc-tech/acp-ai-provider";
-import {
   generateText,
   streamText,
   Output,
@@ -37,11 +31,11 @@ export type OpenAITool = ChatCompletionTool;
 export type OpenAIToolCall = ChatCompletionMessageFunctionToolCall;
 
 export interface OpenAIExtraBody {
-  // ACP provider config (command, session, etc.)
-  acpConfig?: ACPProviderSettings;
   // AI SDK settings
   topK?: number;
   seed?: number;
+  // Provider-specific fields are allowed but interpreted by external runtime helpers.
+  [key: string]: unknown;
 }
 
 export type ACP2OpenAIEndpoint = "chat.completions" | "responses" | "messages";
@@ -87,6 +81,15 @@ export interface ACP2RuntimeFactoryContext {
 export type ACP2RuntimeFactory = (
   context: ACP2RuntimeFactoryContext,
 ) => ACP2ProviderRuntime | Promise<ACP2ProviderRuntime>;
+
+export type ACP2ToolTransformer = (
+  tools: Record<string, any> | undefined,
+  context: ACP2RuntimeFactoryContext,
+) => Record<string, any> | undefined;
+
+export type ACP2ToolCallNormalizer = (
+  toolCall: RawToolCall,
+) => RawToolCall | undefined;
 
 export type ACP2ListModelsResolver =
   | (() => string[] | Promise<string[]>)
@@ -386,12 +389,13 @@ export type OpenAIStreamChunk = ChatCompletionChunk;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ACP2OpenAIConfig {
-  defaultACPConfig?: ACPProviderSettings;
   defaultModel?: string;
   middleware?: ACP2OpenAIMiddleware | ACP2OpenAIMiddleware[];
   plugins?: ACP2OpenAIPlugin | ACP2OpenAIPlugin[];
   runtimeFactory?: ACP2RuntimeFactory;
   listModels?: ACP2ListModelsResolver;
+  transformTools?: ACP2ToolTransformer;
+  normalizeToolCall?: ACP2ToolCallNormalizer;
 }
 
 const CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
@@ -761,38 +765,9 @@ ${toolList}
     }
   }
 
-  private ensureACPConfig(
-    req: OpenAIChatCompletionRequest,
-  ): ACPProviderSettings {
-    const acpConfig = req.extra_body?.acpConfig || this.config.defaultACPConfig;
-    if (!acpConfig) {
-      throw new Error(
-        "ACP session config is required (via extra_body.acpConfig or defaultACPConfig)",
-      );
-    }
-    return acpConfig;
-  }
-
   private resolveModelId(req: OpenAIChatCompletionRequest): string | undefined {
     const id = req.model || this.config.defaultModel;
     return id || undefined;
-  }
-
-  private buildDefaultACPRuntime(
-    req: OpenAIChatCompletionRequest,
-    modelId: string | undefined,
-  ): ACP2ProviderRuntime {
-    const provider = createACPProvider(this.ensureACPConfig(req));
-    const providerTools = provider.tools as Record<string, any> | undefined;
-
-    return {
-      model: provider.languageModel(modelId),
-      modelName: modelId,
-      tools: providerTools,
-      cleanup: () => {
-        provider.cleanup();
-      },
-    };
   }
 
   private async buildRuntime(
@@ -803,20 +778,31 @@ ${toolList}
     const modelId = this.resolveModelId(req);
     const requestTools = this.convertTools(req.tools);
     const allowedToolNames = this.getAllowedToolNames(req.tools);
-    const providerRuntime = this.config.runtimeFactory
-      ? await this.config.runtimeFactory({
-          endpoint,
-          callType,
-          request: this.cloneRequest(req),
-          modelId,
-          defaultModel: this.config.defaultModel,
-        })
-      : this.buildDefaultACPRuntime(req, modelId);
+
+    if (!this.config.runtimeFactory) {
+      throw new Error(
+        "runtimeFactory is required. Use a provider-specific package or pass a custom runtimeFactory.",
+      );
+    }
+
+    const runtimeContext: ACP2RuntimeFactoryContext = {
+      endpoint,
+      callType,
+      request: this.cloneRequest(req),
+      modelId,
+      defaultModel: this.config.defaultModel,
+    };
+
+    const providerRuntime = await this.config.runtimeFactory(runtimeContext);
+    const mergedTools = this.mergeTools(providerRuntime.tools, requestTools);
+    const transformedTools = this.config.transformTools
+      ? this.config.transformTools(mergedTools, runtimeContext)
+      : mergedTools;
 
     return {
       ...providerRuntime,
       modelName: providerRuntime.modelName ?? modelId ?? "",
-      tools: this.mergeTools(providerRuntime.tools, requestTools),
+      tools: transformedTools,
       toolChoice:
         providerRuntime.toolChoice ??
         this.convertToolChoice(req.tool_choice, req.tools),
@@ -1525,27 +1511,11 @@ ${toolList}
       return [this.config.defaultModel ?? "default"];
     }
 
-    if (!this.config.defaultACPConfig) {
-      throw new Error(
-        "defaultACPConfig is required for GET /v1/models (needs ACP initSession)",
-      );
+    if (this.config.defaultModel) {
+      return [this.config.defaultModel, "default"];
     }
 
-    const provider = createACPProvider(this.config.defaultACPConfig);
-
-    try {
-      const sessionInfo = await provider.initSession();
-      return [
-        ...(sessionInfo.models?.availableModels ?? []).map(
-          (model) => model.modelId,
-        ),
-        sessionInfo.models?.currentModelId,
-        this.config.defaultModel,
-        "default",
-      ].filter((id): id is string => Boolean(id));
-    } finally {
-      provider.cleanup();
-    }
+    return ["default"];
   }
 
   private async handleModelsList(): Promise<OpenAIModelListResponse> {
@@ -1598,77 +1568,33 @@ ${toolList}
     }
   }
 
-  private isACPWrappedToolName(name: string): boolean {
-    return name === ACP_PROVIDER_AGENT_DYNAMIC_TOOL_NAME;
-  }
+  private normalizeToolCall(tc: unknown): RawToolCall | undefined {
+    if (!this.isRecord(tc)) return undefined;
 
-  private unwrapACPToolCall(
-    wrapperName: string,
-    payload: Record<string, unknown>,
-    fallbackToolCallId: string,
-  ):
-    | { toolCallId: string; toolName: string; input: Record<string, unknown> }
-    | undefined {
-    if (!this.isACPWrappedToolName(wrapperName)) return undefined;
-
-    const nestedToolName =
-      (typeof payload.toolName === "string" && payload.toolName) ||
-      (typeof payload.name === "string" && payload.name) ||
-      "";
-
-    if (!nestedToolName) return undefined;
-
-    const nestedArgs = this.isRecord(payload.args)
-      ? payload.args
-      : this.isRecord(payload.arguments)
-        ? payload.arguments
-        : {};
-
-    const nestedToolCallId =
-      typeof payload.toolCallId === "string" && payload.toolCallId
-        ? payload.toolCallId
-        : fallbackToolCallId;
-
-    return {
-      toolCallId: nestedToolCallId,
-      toolName: nestedToolName,
-      input: nestedArgs,
-    };
-  }
-
-  private normalizeToolCall(tc: any): any | undefined {
     const fallbackToolCallId =
-      typeof tc?.toolCallId === "string" && tc.toolCallId
+      typeof tc.toolCallId === "string" && tc.toolCallId
         ? tc.toolCallId
         : `call_${Math.random().toString(36).slice(2, 10)}`;
 
-    const rawToolName = typeof tc?.toolName === "string" ? tc.toolName : "";
-    const rawInput = this.isRecord(tc?.input)
+    const rawToolName = typeof tc.toolName === "string" ? tc.toolName : "";
+    const rawInput = this.isRecord(tc.input)
       ? tc.input
-      : this.isRecord(tc?.args)
+      : this.isRecord(tc.args)
         ? tc.args
         : {};
 
-    const unwrapped = this.unwrapACPToolCall(
-      rawToolName,
-      rawInput,
-      fallbackToolCallId,
-    );
-    if (unwrapped) {
-      return {
-        ...tc,
-        ...unwrapped,
-      };
-    }
-
     if (!rawToolName) return undefined;
 
-    return {
+    const normalized: RawToolCall = {
       ...tc,
       toolCallId: fallbackToolCallId,
       toolName: rawToolName,
       input: rawInput,
     };
+
+    return this.config.normalizeToolCall
+      ? this.config.normalizeToolCall(normalized)
+      : normalized;
   }
 
   private stringifyContent(content: any): string {
@@ -1752,17 +1678,11 @@ ${toolList}
               typeof tc.id === "string" && tc.id
                 ? tc.id
                 : `call_${Math.random().toString(36).slice(2, 10)}`;
-            const unwrapped = this.unwrapACPToolCall(
-              tc.function.name,
-              parsedArgs,
-              fallbackToolCallId,
-            );
-
             return {
               type: "tool-call" as const,
-              toolCallId: unwrapped?.toolCallId ?? fallbackToolCallId,
-              toolName: unwrapped?.toolName ?? tc.function.name,
-              args: unwrapped?.input ?? parsedArgs,
+              toolCallId: fallbackToolCallId,
+              toolName: tc.function.name,
+              args: parsedArgs,
             };
           }),
       ],
@@ -1829,7 +1749,7 @@ ${toolList}
 
     if (Object.keys(tools).length === 0) return undefined;
 
-    return acpTools(tools as Record<string, any>);
+    return tools;
   }
 
   /**
@@ -3011,35 +2931,3 @@ ${toolList}
 export function createACP2OpenAI(config?: ACP2OpenAIConfig): ACP2OpenAI {
   return new ACP2OpenAI(config);
 }
-
-export {
-  buildCodeExecutionSystemPrompt,
-  createJavaScriptCodeExecutionPlugin,
-  createJavaScriptProgrammaticToolLoopPlugin,
-  createProgrammaticToolLoopPlugin,
-} from "./programmatic-tool-loop-plugin.js";
-export {
-  createDenoCodeExecutionRuntimeFactory,
-} from "./code-execution-runtime.js";
-export type {
-  CodeExecutionPendingToolCall,
-  CodeExecutionSession,
-  CodeExecutionSessionState,
-  JavaScriptCodeExecutionPluginConfig,
-  JavaScriptProgrammaticExecutionResult,
-  JavaScriptProgrammaticToolCallRecord,
-  JavaScriptProgrammaticToolHandlerContext,
-  ProgrammaticToolLoopExecuteContext,
-  ProgrammaticToolLoopFinalResultStep,
-  ProgrammaticToolLoopMatchContext,
-  ProgrammaticToolLoopPluginConfig,
-  ProgrammaticToolLoopStepResult,
-  ProgrammaticToolLoopToolCall,
-  ProgrammaticToolLoopToolResultStep,
-} from "./programmatic-tool-loop-plugin.js";
-export type {
-  CodeExecutionRuntimeFactory,
-  CodeExecutionRuntimeHandle,
-  CreateCodeExecutionRuntimeParams,
-  DenoCodeExecutionRuntimeFactoryConfig,
-} from "./code-execution-runtime.js";

@@ -1,0 +1,34 @@
+{
+  "name": "@yaonyan/acp2openai-ptc",
+  "version": "0.1.0",
+  "description": "Programmatic tool calling plugin and Deno runtime for acp2openai-compatible",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown && pnpm exec tsc -p tsconfig.json --emitDeclarationOnly && cp dist/packages/ptc/src/index.d.ts dist/index.d.ts && cp dist/packages/ptc/src/index.d.ts.map dist/index.d.ts.map",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mcpc-tech/handle-sandbox": "^0.0.11",
+    "@yaonyan/acp2openai-compatible": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "openai": "^6.27.0",
+    "tsdown": "^0.21.1",
+    "typescript": "^5.9.2"
+  }
+}

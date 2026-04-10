@@ -14,7 +14,7 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsdown && tsc -p tsconfig.json --emitDeclarationOnly",
+    "build": "tsdown && pnpm exec tsc -p tsconfig.json --emitDeclarationOnly && cp dist/packages/cli/src/index.d.ts dist/index.d.ts && cp dist/packages/cli/src/index.d.ts.map dist/index.d.ts.map",
     "dev": "tsx src/index.ts",
     "launch": "tsx src/index.ts launch",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -23,7 +23,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@yaonyan/acp2openai-compatible": "workspace:*"
+    "@yaonyan/acp2openai-acp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

@@ -6,7 +6,7 @@ import {
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
+import { createACP2OpenAI } from "@yaonyan/acp2openai-acp";
 import type { LaunchConfig } from "./config.js";
 
 export interface RunningProxyServer {

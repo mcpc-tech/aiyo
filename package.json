@@ -26,7 +26,7 @@
   },
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json --emitDeclarationOnly",
-    "build:workspace": "pnpm -r build",
+    "build:workspace": "pnpm -r --if-present build",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit",
     "typecheck:workspace": "pnpm -r typecheck",
@@ -38,10 +38,12 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "example:hono": "ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json tsx examples/hono-server/server.ts",
-    "example:express": "tsx examples/express/server.ts",
-    "client:stream": "tsx examples/ai-sdk-client/client.ts",
-    "client:generate": "tsx examples/ai-sdk-client/client-generate.ts",
+    "example:hono": "ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json pnpm --filter acp2openai-example-hono-server dev",
+    "example:hono:basic": "ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json pnpm --filter acp2openai-example-hono-server basic",
+    "example:hono:ptc": "pnpm --filter acp2openai-example-hono-server ptc",
+    "example:express": "pnpm --filter acp2openai-example-express-server dev",
+    "client:stream": "pnpm --filter acp2openai-example-ai-sdk-client stream",
+    "client:generate": "pnpm --filter acp2openai-example-ai-sdk-client generate",
     "cli:build": "pnpm --filter @yaonyan/acp2openai-cli build",
     "cli:dev": "pnpm --filter @yaonyan/acp2openai-cli dev",
     "launch": "node scripts/launch-cli.mjs",
@@ -68,12 +70,14 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@mcpc-tech/acp-ai-provider": "^0.3.1",
-    "@mcpc-tech/handle-sandbox": "^0.0.11",
-    "ai": "^6.0.116"
+    "ai": "^6.0.116",
+    "openai": "^6.27.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@ai-sdk/openai": "^3.0.52",
+    "@mcpc-tech/acp-ai-provider": "^0.3.1",
+    "@mcpc-tech/handle-sandbox": "^0.0.11",
     "@types/node": "^24.3.0",
     "@vitest/coverage-v8": "^4.0.18",
     "@vitest/ui": "^4.0.18",
