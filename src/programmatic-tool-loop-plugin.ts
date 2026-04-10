@@ -406,7 +406,39 @@ interface OpenAIToolDefinition {
     name: string;
     description?: string;
     parameters?: Record<string, unknown>;
+    outputSchema?: Record<string, unknown>;
+    output_schema?: Record<string, unknown>;
   };
+}
+
+function summarizeSchemaProperties(
+  schema: Record<string, unknown> | undefined,
+): string[] {
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+  const props = isRecord(schema?.properties) ? schema.properties : {};
+
+  return Object.entries(props).map(([key, propertySchema]) => {
+    const s = isRecord(propertySchema) ? propertySchema : {};
+    const req = required.includes(key) ? " (required)" : " (optional)";
+    const desc = typeof s.description === "string" ? ` — ${s.description}` : "";
+    return `  - ${key}: ${s.type ?? "any"}${req}${desc}`;
+  });
+}
+
+function getToolOutputSchema(
+  tool: OpenAIToolDefinition,
+): Record<string, unknown> | undefined {
+  const fn = tool.function;
+
+  if (isRecord(fn.outputSchema)) {
+    return fn.outputSchema;
+  }
+
+  if (isRecord(fn.output_schema)) {
+    return fn.output_schema;
+  }
+
+  return undefined;
 }
 
 function buildToolSchemaBlock(tool: OpenAIToolDefinition): string {
@@ -414,19 +446,13 @@ function buildToolSchemaBlock(tool: OpenAIToolDefinition): string {
   const paramsJson = fn.parameters
     ? JSON.stringify(fn.parameters, null, 2)
     : "{}";
+  const outputSchema = getToolOutputSchema(tool);
+  const outputJson = outputSchema
+    ? JSON.stringify(outputSchema, null, 2)
+    : undefined;
 
-  const required = Array.isArray(fn.parameters?.required)
-    ? fn.parameters.required
-    : [];
-  const props = isRecord(fn.parameters?.properties)
-    ? fn.parameters!.properties
-    : {};
-  const paramLines = Object.entries(props).map(([key, schema]) => {
-    const s = isRecord(schema) ? schema : {};
-    const req = required.includes(key) ? " (required)" : " (optional)";
-    const desc = typeof s.description === "string" ? ` — ${s.description}` : "";
-    return `  - ${key}: ${s.type ?? "any"}${req}${desc}`;
-  });
+  const paramLines = summarizeSchemaProperties(fn.parameters);
+  const outputLines = summarizeSchemaProperties(outputSchema);
 
   return [
     `<tool name="${fn.name}">`,
@@ -436,6 +462,10 @@ function buildToolSchemaBlock(tool: OpenAIToolDefinition): string {
     `</parameters>`,
     paramLines.length > 0
       ? `<param_summary>\n${paramLines.join("\n")}\n</param_summary>`
+      : "",
+    outputJson ? `<output_schema>\n${outputJson}\n</output_schema>` : "",
+    outputLines.length > 0
+      ? `<output_summary>\n${outputLines.join("\n")}\n</output_summary>`
       : "",
     `<usage>const result = await tools.${fn.name}(${buildExampleArgs(fn.parameters)});</usage>`,
     `</tool>`,
@@ -499,6 +529,8 @@ Call \`${codeExecutionToolName}\` with a \`code\` field containing your JavaScri
 - Sandboxed: no \`require\`, \`import\`, or network access.
 - Tool args must be plain JSON-serializable objects.
 - For multiple independent tool calls, use sequential awaits (not Promise.all).
+- If a tool declares an \`output_schema\`, treat it as authoritative and read only fields defined there.
+- Do not guess alternate result field names when an output schema is available.
 </instructions>
 
 <available_tools>

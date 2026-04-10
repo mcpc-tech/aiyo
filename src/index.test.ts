@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACP2OpenAI,
+  buildCodeExecutionSystemPrompt,
   createJavaScriptCodeExecutionPlugin,
   createProgrammaticToolLoopPlugin,
   type AnthropicMessagesRequest,
@@ -1439,6 +1440,38 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       });
       return { promise, resolve, reject };
     }
+
+    it("includes declared output schemas in the PTC system prompt", () => {
+      const prompt = buildCodeExecutionSystemPrompt([
+        {
+          type: "function",
+          function: {
+            name: "get_current_time",
+            description: "Get the current date and time.",
+            parameters: {
+              type: "object",
+              properties: {
+                timezone: { type: "string" },
+              },
+            },
+            outputSchema: {
+              type: "object",
+              properties: {
+                iso: { type: "string" },
+                local: { type: "string" },
+                timezone: { type: "string" },
+                unix_timestamp: { type: "number" },
+              },
+              required: ["iso", "local", "timezone", "unix_timestamp"],
+            },
+          },
+        },
+      ] as any);
+
+      expect(prompt).toContain("<output_schema>");
+      expect(prompt).toContain('"unix_timestamp"');
+      expect(prompt).toContain("Do not guess alternate result field names");
+    });
 
     it("suspends on the first sandbox tool call and exposes the bridge tool call", async () => {
       const { generateText } = await import("ai");

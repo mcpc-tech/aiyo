@@ -6,7 +6,7 @@
  *   pnpm tsx examples/ai-sdk-client/client.ts
  */
 import { createOpenAI } from "@ai-sdk/openai";
-import { streamText, tool, stepCountIs } from "ai";
+import { jsonSchema, streamText, tool, stepCountIs } from "ai";
 import { z } from "zod";
 
 const openai = createOpenAI({
@@ -14,12 +14,140 @@ const openai = createOpenAI({
   apiKey: "dummy",
 });
 
+const toolOutputSchemas = {
+  get_launch_count: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      year: {
+        type: "number",
+        description: "The year that was queried.",
+      },
+      launches: {
+        type: "number",
+        description: "The number of launches recorded for that year.",
+      },
+    },
+    required: ["year", "launches"],
+  },
+  get_weather: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      city: { type: "string", description: "City name." },
+      country: {
+        type: "string",
+        description: "Country name or code when available.",
+      },
+      temperature: {
+        type: "number",
+        description: "Current temperature in Celsius.",
+      },
+      condition: {
+        type: "string",
+        description: "Human-readable weather condition.",
+      },
+      unit: {
+        type: "string",
+        description: "Temperature unit.",
+        enum: ["celsius"],
+      },
+    },
+    required: ["city", "temperature", "condition", "unit"],
+  },
+  calculate: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      expression: {
+        type: "string",
+        description: "The original expression that was evaluated.",
+      },
+      result: {
+        type: "number",
+        description: "The numeric result when evaluation succeeds.",
+      },
+      error: {
+        type: "string",
+        description: "Error string when evaluation fails.",
+      },
+      success: {
+        type: "boolean",
+        description: "Whether the calculation succeeded.",
+      },
+    },
+    required: ["expression", "success"],
+  },
+  get_current_time: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      iso: {
+        type: "string",
+        description: "Current timestamp in ISO-8601 format.",
+      },
+      local: {
+        type: "string",
+        description: "Human-readable local datetime string.",
+      },
+      timezone: {
+        type: "string",
+        description: "Timezone label used for the response.",
+      },
+      unix_timestamp: {
+        type: "number",
+        description: "Unix timestamp in seconds.",
+      },
+    },
+    required: ["iso", "local", "timezone", "unix_timestamp"],
+  },
+  search_knowledge: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      query: { type: "string", description: "Original search query." },
+      results: {
+        type: "array",
+        description: "Ranked search results.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            snippet: { type: "string" },
+            relevance: { type: "number" },
+          },
+          required: ["title", "snippet", "relevance"],
+        },
+      },
+      total: {
+        type: "number",
+        description: "Total number of results returned before truncation.",
+      },
+    },
+    required: ["query", "results", "total"],
+  },
+} as const;
+
+function buildToolOutputSchemaPrompt() {
+  return [
+    "<tool_output_schemas>",
+    ...Object.entries(toolOutputSchemas).map(
+      ([toolName, schema]) =>
+        `<tool name="${toolName}">\n${JSON.stringify(schema, null, 2)}\n</tool>`,
+    ),
+    "</tool_output_schemas>",
+    "When reading tool results, trust the declared output schema fields exactly and do not guess alternate field names.",
+  ].join("\n\n");
+}
+
 const tools = {
   get_launch_count: tool({
     description: "Returns the number of rocket launches for a given year.",
     inputSchema: z.object({
       year: z.number().describe("The year to query"),
     }),
+    outputSchema: jsonSchema(toolOutputSchemas.get_launch_count as any),
     execute: async ({ year }) => {
       console.log(`  [tool] get_launch_count called with year=${year}`);
       // Mock data: more launches in recent years
@@ -35,6 +163,7 @@ const tools = {
       city: z.string().describe("City name"),
       country: z.string().optional().describe("Country code (optional)"),
     }),
+    outputSchema: jsonSchema(toolOutputSchemas.get_weather as any),
     execute: async ({ city, country }) => {
       console.log(
         `  [tool] get_weather called for ${city}${country ? `, ${country}` : ""}`,
@@ -57,6 +186,7 @@ const tools = {
           'Mathematical expression to evaluate (e.g., "2 + 2", "sqrt(16)")',
         ),
     }),
+    outputSchema: jsonSchema(toolOutputSchemas.calculate as any),
     execute: async ({ expression }) => {
       console.log(`  [tool] calculate called with: ${expression}`);
       try {
@@ -79,6 +209,7 @@ const tools = {
           'Timezone (e.g., "UTC", "America/New_York"). Defaults to local time.',
         ),
     }),
+    outputSchema: jsonSchema(toolOutputSchemas.get_current_time as any),
     execute: async ({ timezone }) => {
       console.log(
         `  [tool] get_current_time called${timezone ? ` for timezone: ${timezone}` : ""}`,
@@ -102,6 +233,7 @@ const tools = {
         .optional()
         .describe("Maximum number of results (default: 5)"),
     }),
+    outputSchema: jsonSchema(toolOutputSchemas.search_knowledge as any),
     execute: async ({ query, limit = 5 }) => {
       console.log(
         `  [tool] search_knowledge called with query: "${query}" (limit: ${limit})`,
@@ -142,7 +274,7 @@ async function main() {
     messages: [
       {
         role: "system",
-        content: `You have access to these tools: ${Object.keys(tools).join(", ")}. Use them to answer the user.`,
+        content: `You have access to these tools: ${Object.keys(tools).join(", ")}. Use them to answer the user.\n\n${buildToolOutputSchemaPrompt()}`,
       },
       {
         role: "user",
