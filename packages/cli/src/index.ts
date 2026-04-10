@@ -33,18 +33,15 @@ function printHelp() {
   console.log(`aiyo CLI
 
 Usage:
-  aiyo launch opencode [options] [-- extra args]
-  aiyo launch claude [options] [-- extra args]
-
-Supported integrations:
-  - opencode
-  - claude (alias: claude-code)
+  aiyo serve [options]                     Start proxy server only (API mode)
+  aiyo launch opencode [options] [-- ...]  Start proxy + launch opencode
+  aiyo launch claude [options] [-- ...]    Start proxy + launch claude
 
 Options:
   --model <name>              Model to use (default: gpt-4o-mini or OPENAI_MODEL env)
-  --host <host>               Host to bind the local proxy server
-  --port <port>               Port to bind the local proxy server
-  --cwd <path>                Working directory for the launched client
+  --host <host>               Host to bind the proxy server (default: 127.0.0.1)
+  --port <port>               Port to bind the proxy server (default: 3456)
+  --cwd <path>                Working directory for the launched client (launch only)
   --upstream-url <url>        Upstream OpenAI-compatible base URL (or OPENAI_BASE_URL env)
   --upstream-key <key>        Upstream API key (or OPENAI_API_KEY env)
   --ptc                       Enable built-in Programmatic Tool Calling (PTC) plugin
@@ -67,11 +64,17 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   const parsed: ParsedArgs = {
     command: head[0],
-    integration: head[1],
     extraArgs,
   };
 
-  for (let index = 2; index < head.length; index += 1) {
+  // For "launch", head[1] is the integration name (not a flag)
+  let startIndex = 1;
+  if (head[0] === "launch" && head[1] && !head[1].startsWith("-")) {
+    parsed.integration = head[1];
+    startIndex = 2;
+  }
+
+  for (let index = startIndex; index < head.length; index += 1) {
     const token = head[index];
 
     switch (token) {
@@ -123,6 +126,33 @@ function normalizeIntegration(integration: string | undefined): "opencode" | "cl
   throw new Error(
     `Unsupported integration: ${integration || "<empty>"}. Currently supported: opencode, claude`,
   );
+}
+
+async function runServe(parsed: ParsedArgs): Promise<void> {
+  const config = resolveLaunchConfig({
+    host: parsed.host,
+    port: parsed.port,
+    model: parsed.model,
+    upstreamBaseURL: parsed.upstreamBaseURL,
+    upstreamApiKey: parsed.upstreamApiKey,
+    ptc: parsed.ptc,
+    cwd: parsed.cwd,
+  });
+
+  const server = await startProxyServer(config);
+
+  console.error(`[aiyo-cli] Server running at ${server.baseURL}`);
+  console.error(`[aiyo-cli] Model: ${config.model}`);
+  console.error(`[aiyo-cli] PTC: ${config.ptc ? "enabled" : "disabled"}`);
+  console.error(`[aiyo-cli] Endpoints: /health /v1/models /v1/chat/completions /v1/responses /v1/messages`);
+
+  // Keep alive until SIGINT/SIGTERM
+  await new Promise<void>((resolve) => {
+    process.once("SIGINT", resolve);
+    process.once("SIGTERM", resolve);
+  });
+
+  await server.close();
 }
 
 async function runLaunch(parsed: ParsedArgs): Promise<void> {
@@ -177,8 +207,13 @@ async function main() {
 
   const parsed = parseArgs(argv);
 
+  if (parsed.command === "serve") {
+    await runServe(parsed);
+    return;
+  }
+
   if (parsed.command !== "launch") {
-    throw new Error(`Unsupported command: ${parsed.command || "<empty>"}`);
+    throw new Error(`Unsupported command: ${parsed.command || "<empty>"}. Use 'serve' or 'launch'`);
   }
 
   await runLaunch(parsed);
