@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo-cli",
-  "version": "0.1.0",
+  "version": "0.0.1-beta.1",
   "description": "CLI launcher for aiyo-compatible",
   "license": "MIT",
   "bin": {
@@ -12,7 +12,7 @@
   ],
   "type": "module",
   "main": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.mts",
   "scripts": {
     "build": "tsdown",
     "dev": "tsx src/index.ts",

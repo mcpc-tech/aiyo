@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo-acp",
-  "version": "0.1.0",
+  "version": "0.0.1-beta.1",
   "description": "ACP runtime integration package for aiyo-compatible",
   "license": "MIT",
   "files": [
@@ -9,10 +9,10 @@
   ],
   "type": "module",
   "main": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
     }
   },

@@ -4,7 +4,7 @@ export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
   platform: "node",
-  dts: false,
+  dts: true,
   sourcemap: true,
   clean: true,
   unbundle: true,
