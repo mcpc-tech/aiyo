@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo-cli",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.1-beta.2",
   "description": "CLI launcher for aiyo-compatible",
   "license": "MIT",
   "bin": {

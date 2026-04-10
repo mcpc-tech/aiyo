@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo-acp",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.1-beta.2",
   "description": "ACP runtime integration package for aiyo-compatible",
   "license": "MIT",
   "files": [
