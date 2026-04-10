@@ -1,70 +1,39 @@
 import { serve } from "@hono/node-server";
+import { createOpenAI } from "@ai-sdk/openai";
 import { Hono } from "hono";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createACP2OpenAI } from "@yaonyan/acp2openai-acp";
+import { createACP2OpenAI } from "@yaonyan/acp2openai-compatible";
 
-interface FileConfig {
-  port?: number;
-  defaultModel?: string;
-  acp?: {
-    command?: string;
-    args?: string[];
-    cwd?: string;
-    env?: Record<string, string>;
-  };
-}
+for (const envPath of [
+  resolve(import.meta.dirname, ".env"),
+  resolve(import.meta.dirname, "../../.env"),
+]) {
+  if (!existsSync(envPath)) continue;
 
-function loadFileConfig(): FileConfig {
-  const configPath = resolve(
-    process.env.ACP2OPENAI_CONFIG || "acp2openai.config.json",
-  );
-
-  if (!existsSync(configPath)) return {};
-
-  try {
-    return JSON.parse(readFileSync(configPath, "utf-8")) as FileConfig;
-  } catch (error) {
-    console.warn(`[basic-server] Failed to parse ${configPath}:`, error);
-    return {};
-  }
-}
-
-function parseACPArgs(fallback?: string[]): string[] {
-  const raw = process.env.ACP_ARGS;
-
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return raw
-        .split(" ")
-        .map((value) => value.trim())
-        .filter(Boolean);
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const match = line.match(/^\s*([^#=]+?)\s*=\s*(.*?)\s*$/);
+    if (match && !process.env[match[1]]) {
+      process.env[match[1]] = match[2].replace(/^["']|["']$/g, "");
     }
   }
 
-  return fallback ?? [];
+  console.log(`📄 Loaded env from ${envPath}`);
+  break;
 }
 
-const file = loadFileConfig();
-const port = Number(process.env.PORT || file.port || 3456);
-const acpCommand = process.env.ACP_COMMAND || file.acp?.command || "codebuddy";
-const acpArgs = parseACPArgs(file.acp?.args);
-const acpCwd = process.env.ACP_CWD || file.acp?.cwd || process.cwd();
+const port = Number(process.env.PORT || 3456);
+const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+const apiKey = process.env.OPENAI_API_KEY || "dummy";
+const defaultModel = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+const openai = createOpenAI({ baseURL, apiKey });
 const adapter = createACP2OpenAI({
-  defaultModel: process.env.ACP_MODEL || file.defaultModel,
-  defaultACPConfig: {
-    command: acpCommand,
-    args: acpArgs,
-    env: file.acp?.env,
-    session: {
-      cwd: acpCwd,
-      mcpServers: [],
-    },
-  },
+  defaultModel,
+  runtimeFactory: ({ modelId }) => ({
+    model: openai.chat(modelId || defaultModel),
+    modelName: modelId || defaultModel,
+  }),
 });
 
 const app = new Hono();
@@ -73,18 +42,20 @@ app.get("/", (c) =>
   c.json({
     name: "acp2openai-hono-basic",
     mode: "basic",
-    endpoints: [
-      "/health",
-      "/v1/models",
-      "/v1/chat/completions",
-      "/v1/responses",
-      "/v1/messages",
-    ],
+    provider: baseURL,
+    model: defaultModel,
+    endpoints: ["/health", "/v1/models", "/v1/chat/completions", "/v1/responses", "/v1/messages"],
   }),
 );
 
 app.get("/health", (c) =>
-  c.json({ status: "ok", service: "basic-server", mode: "basic" }),
+  c.json({
+    status: "ok",
+    service: "basic-server",
+    mode: "basic",
+    provider: baseURL,
+    model: defaultModel,
+  }),
 );
 
 app.get("/v1/models", adapter.honoHandler());
@@ -103,8 +74,6 @@ serve({
 });
 
 console.log(`🚀 Basic server running on http://127.0.0.1:${port}`);
-console.log(`🤖 ACP command: ${acpCommand} ${acpArgs.join(" ")}`.trim());
-console.log(`📁 ACP cwd: ${acpCwd}`);
-console.log(
-  "📋 Endpoints: /health, /v1/models, /v1/chat/completions, /v1/responses, /v1/messages",
-);
+console.log(`🧠 Provider: ${baseURL}`);
+console.log(`🤖 Model: ${defaultModel}`);
+console.log("📋 Endpoints: /health, /v1/models, /v1/chat/completions, /v1/responses, /v1/messages");
