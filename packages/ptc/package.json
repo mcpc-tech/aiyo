@@ -2,7 +2,7 @@
   "name": "@mcpc-tech/aiyo-ptc",
   "version": "0.0.1-beta.2",
   "description": "Programmatic tool calling plugin and Deno runtime for aiyo-compatible",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "files": [
     "dist",
     "README.md"
