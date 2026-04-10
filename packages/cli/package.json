@@ -21,7 +21,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mcpc-tech/aiyo-acp": "workspace:*"
+    "@ai-sdk/openai": "^3.0.52",
+    "@mcpc-tech/aiyo": "workspace:*",
+    "@mcpc-tech/aiyo-ptc": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

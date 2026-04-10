@@ -2,7 +2,7 @@
 
 import { launchClaudeCode } from "./claude-code.js";
 import { launchOpenCode } from "./opencode.js";
-import { resolveLaunchConfig, parseACPArgs } from "./config.js";
+import { resolveLaunchConfig } from "./config.js";
 import { startProxyServer } from "./proxy-server.js";
 
 interface ParsedArgs {
@@ -12,8 +12,9 @@ interface ParsedArgs {
   host?: string;
   port?: number;
   cwd?: string;
-  acpCommand?: string;
-  acpArgs?: string[];
+  ptc?: boolean;
+  upstreamBaseURL?: string;
+  upstreamApiKey?: string;
   extraArgs: string[];
 }
 
@@ -29,14 +30,14 @@ Supported integrations:
   - claude (alias: claude-code)
 
 Options:
-  --model <name>          Model to expose via the proxy
-  --host <host>           Host to bind the local proxy server
-  --port <port>           Port to bind the local proxy server
-  --cwd <path>            Working directory for the ACP session and launched client
-  --acp-command <cmd>     ACP runtime command
-  --acp-arg <value>       Repeatable ACP arg
-  --acp-args <value>      ACP args as JSON array or space-separated string
-  -h, --help              Show help
+  --model <name>              Model to use (default: gpt-4o-mini or OPENAI_MODEL env)
+  --host <host>               Host to bind the local proxy server
+  --port <port>               Port to bind the local proxy server
+  --cwd <path>                Working directory for the launched client
+  --upstream-url <url>        Upstream OpenAI-compatible base URL (or OPENAI_BASE_URL env)
+  --upstream-key <key>        Upstream API key (or OPENAI_API_KEY env)
+  --ptc                       Enable built-in Programmatic Tool Calling (PTC) plugin
+  -h, --help                  Show help
 `);
 }
 
@@ -79,19 +80,16 @@ function parseArgs(argv: string[]): ParsedArgs {
         parsed.cwd = expectValue(head, index, token);
         index += 1;
         break;
-      case "--acp-command":
-        parsed.acpCommand = expectValue(head, index, token);
+      case "--upstream-url":
+        parsed.upstreamBaseURL = expectValue(head, index, token);
         index += 1;
         break;
-      case "--acp-arg": {
-        const value = expectValue(head, index, token);
-        parsed.acpArgs = [...(parsed.acpArgs || []), value];
+      case "--upstream-key":
+        parsed.upstreamApiKey = expectValue(head, index, token);
         index += 1;
         break;
-      }
-      case "--acp-args":
-        parsed.acpArgs = parseACPArgs(expectValue(head, index, token));
-        index += 1;
+      case "--ptc":
+        parsed.ptc = true;
         break;
       case "-h":
       case "--help":
@@ -123,13 +121,15 @@ async function runLaunch(parsed: ParsedArgs): Promise<void> {
     host: parsed.host,
     port: parsed.port,
     model: parsed.model,
-    acpCommand: parsed.acpCommand,
-    acpArgs: parsed.acpArgs,
+    upstreamBaseURL: parsed.upstreamBaseURL,
+    upstreamApiKey: parsed.upstreamApiKey,
+    ptc: parsed.ptc,
     cwd: parsed.cwd,
   });
 
   console.error(`[aiyo-cli] Starting proxy at http://${config.host}:${config.port}`);
-  console.error(`[aiyo-cli] ACP runtime: ${config.acpCommand} ${config.acpArgs.join(" ")}`);
+  console.error(`[aiyo-cli] Model: ${config.model}`);
+  console.error(`[aiyo-cli] PTC: ${config.ptc ? "enabled" : "disabled"}`);
   console.error(`[aiyo-cli] Launch target: ${integration}`);
 
   const server = await startProxyServer(config);

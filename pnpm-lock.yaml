@@ -139,9 +139,15 @@ importers:
 
   packages/cli:
     dependencies:
-      '@mcpc-tech/aiyo-acp':
+      '@ai-sdk/openai':
+        specifier: ^3.0.52
+        version: 3.0.52(zod@3.25.76)
+      '@mcpc-tech/aiyo':
         specifier: workspace:*
-        version: link:../acp
+        version: link:../core
+      '@mcpc-tech/aiyo-ptc':
+        specifier: workspace:*
+        version: link:../ptc
     devDependencies:
       '@types/node':
         specifier: ^24.3.0
