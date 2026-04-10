@@ -98,6 +98,10 @@ You must provide ACP config in **one** of these two places:
 
 Without one of those, chat and responses requests will fail because the adapter has no ACP runtime to call.
 
+## Architecture notes
+
+- Programmatic Tool Calling (PTC) architecture, with Deno as the target sandbox runtime: [`docs/ptc-architecture.md`](./docs/ptc-architecture.md)
+
 ## Included examples
 
 This repo includes two runnable example servers:
@@ -268,13 +272,15 @@ If you want something closer to Claude's **programmatic tool calling**, use `cre
 This implements a **cross-request tool bridge**:
 
 1. The model sees ONE tool (e.g. `code_execution`) and writes JS code in the input
-2. The plugin starts executing the JS in a `node:vm` sandbox
+2. The plugin starts executing the JS in a sandbox runtime
 3. When the code calls `await tools.read_file(args)`, the sandbox **suspends**
 4. The OpenAI layer **immediately responds** with `tool_calls: [{ name: "read_file", args }]`
 5. The user/agent executes the real tool and sends a new request with the `tool_result`
 6. The plugin **resumes** the sandbox — `tools.read_file()` returns the result
 7. Repeat for each `tools.*` call in the JS code
 8. When the JS finishes, the final value becomes the `tool_result` for the model
+
+This implementation uses a Deno-backed sandbox runtime. For the full Programmatic Tool Calling (PTC) architecture and runtime design, see [`docs/ptc-architecture.md`](./docs/ptc-architecture.md).
 
 ```ts
 import {
@@ -307,7 +313,7 @@ The model emits a tool call like:
 
 The key difference from a normal tool loop: the JS sandbox **stays alive across multiple HTTP request/response cycles**. Each `tools.*` call suspends the sandbox and returns a real `tool_calls` response to the caller; the next request with `tool_result` resumes it.
 
-This uses Node's `vm` module, so it is meant for **trusted or partially trusted** code.
+Today, this path runs on a Deno-backed sandbox runtime with explicit Deno permissions. Keep permissions narrow for your use case. For the full PTC architecture and runtime design, see [`docs/ptc-architecture.md`](./docs/ptc-architecture.md).
 
 ### `adapter.handleRequest(request)`
 

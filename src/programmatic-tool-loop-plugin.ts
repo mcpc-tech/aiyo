@@ -1,3 +1,9 @@
+import type { SandboxConfig } from "@mcpc-tech/handle-sandbox";
+import {
+  createDenoCodeExecutionRuntimeFactory,
+  type CodeExecutionRuntimeFactory,
+  type CodeExecutionRuntimeHandle,
+} from "./code-execution-runtime.js";
 import type {
   ACP2OpenAIFinalResult,
   ACP2OpenAIPlugin,
@@ -72,6 +78,7 @@ export interface JavaScriptProgrammaticToolHandlerContext extends ProgrammaticTo
 }
 
 export interface JavaScriptProgrammaticExecutionResult {
+  source: string;
   value: unknown;
   logs: string[];
   toolHistory: JavaScriptProgrammaticToolCallRecord[];
@@ -94,20 +101,10 @@ export type CodeExecutionSessionState =
 /** A code execution session that can be suspended and resumed across HTTP requests. */
 export interface CodeExecutionSession {
   executionId: string;
-  state: CodeExecutionSessionState;
-  pendingToolCall?: CodeExecutionPendingToolCall;
-  completionPromise: Promise<JavaScriptProgrammaticExecutionResult>;
-  resolve?: (value: unknown) => void;
-  logs: string[];
-  toolHistory: JavaScriptProgrammaticToolCallRecord[];
-  error?: Error;
-  result?: JavaScriptProgrammaticExecutionResult;
+  handle: CodeExecutionRuntimeHandle;
   executionToolCallId?: string;
   modelRequestMessages?: OpenAIChatCompletionRequest["messages"];
   assistantToolCallMessage?: OpenAIChatCompletionRequest["messages"][number];
-  /** Resolves when state changes from "running" to something else. */
-  stateChangeNotify?: () => void;
-  stateChangePromise?: Promise<void>;
 }
 
 export interface JavaScriptCodeExecutionPluginConfig {
@@ -145,6 +142,10 @@ export interface JavaScriptCodeExecutionPluginConfig {
   maxLogs?: number;
   /** Extra globals injected into the sandbox. */
   sandbox?: () => Record<string, unknown> | undefined;
+  /** Deno sandbox process options such as permissions, cwd, env, and extra args. */
+  denoSandbox?: SandboxConfig;
+  /** Custom runtime factory for advanced embedding; defaults to the built-in Deno runtime. */
+  runtimeFactory?: CodeExecutionRuntimeFactory;
   /** Maps the final execution result before it's sent back to the model as tool_result. */
   mapExecutionResult?: (
     result: JavaScriptProgrammaticExecutionResult,
@@ -163,36 +164,8 @@ function cloneValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function cloneValueIfPossible<T>(value: T): T {
-  try {
-    return cloneValue(value);
-  } catch {
-    return value;
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function normalizeObject(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
-}
-
-function stringifyLogValue(value: unknown): string {
-  if (typeof value === "string") return value;
-
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function pushLog(logs: string[], maxLogs: number, values: unknown[]): void {
-  if (logs.length >= maxLogs) return;
-  const line = values.map((value) => stringifyLogValue(value)).join(" ");
-  logs.push(line);
 }
 
 function getDefaultJavaScriptCode(
@@ -672,171 +645,52 @@ export function createJavaScriptCodeExecutionPlugin(
     }
   };
 
+  const runtimeFactory =
+    config.runtimeFactory ??
+    createDenoCodeExecutionRuntimeFactory({
+      name: config.name,
+      timeoutMs,
+      maxLogs,
+      toolNames: config.toolNames,
+      sandboxGlobals: config.sandbox,
+      denoSandbox: config.denoSandbox,
+    });
+
   // ── helpers ──────────────────────────────────────────────────────────
 
-  function startSession(
+  async function startSession(
     executionId: string,
     source: string,
     toolCallInput: Record<string, unknown>,
-  ): CodeExecutionSession {
-    const logs: string[] = [];
-    const toolHistory: JavaScriptProgrammaticToolCallRecord[] = [];
+  ): Promise<CodeExecutionSession> {
+    const handle = await runtimeFactory.createExecution({
+      executionId,
+      source,
+      toolCallInput,
+    });
+
     const session: CodeExecutionSession = {
       executionId,
-      state: "running",
-      logs,
-      toolHistory,
-      completionPromise: null as any, // set below
+      handle,
     };
-
-    // Build sandbox tools — each returns a Promise that blocks until
-    // the external agent supplies a tool_result via a new HTTP request.
-    const sandboxTools: Record<string, (args: unknown) => Promise<unknown>> =
-      {};
-
-    // Queue for concurrent tool calls (e.g. from Promise.all)
-    const pendingQueue: Array<{
-      toolCallId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      resolve: (value: unknown) => void;
-    }> = [];
-
-    function drainNextPending() {
-      if (session.pendingToolCall || pendingQueue.length === 0) return;
-      const next = pendingQueue.shift()!;
-      session.state = "waiting_for_tool_result";
-      session.pendingToolCall = {
-        toolCallId: next.toolCallId,
-        toolName: next.toolName,
-        args: next.args,
-      };
-      session.resolve = (value: unknown) => {
-        toolHistory.push({
-          toolName: next.toolName,
-          args: cloneValue(next.args),
-          output: cloneValueIfPossible(value),
-        });
-        session.pendingToolCall = undefined;
-        session.resolve = undefined;
-        session.state = "running";
-        next.resolve(value);
-        // Drain next pending if any
-        drainNextPending();
-      };
-      // Notify waiters that state changed
-      if (session.stateChangeNotify) {
-        session.stateChangeNotify();
-      } else {
-        session.stateChangePromise = Promise.resolve();
-      }
-    }
-
-    for (const toolName of config.toolNames) {
-      sandboxTools[toolName] = (args: unknown) => {
-        const normalizedArgs = normalizeObject(args);
-        const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-        return new Promise<unknown>((resolve) => {
-          pendingQueue.push({
-            toolCallId,
-            toolName,
-            args: cloneValue(normalizedArgs),
-            resolve,
-          });
-          drainNextPending();
-        });
-      };
-    }
-
-    const sandbox: Record<string, unknown> = {
-      tools: sandboxTools,
-      input: cloneValue(toolCallInput),
-      console: {
-        log: (...values: unknown[]) => pushLog(logs, maxLogs, values),
-        info: (...values: unknown[]) => pushLog(logs, maxLogs, values),
-        warn: (...values: unknown[]) => pushLog(logs, maxLogs, values),
-        error: (...values: unknown[]) => pushLog(logs, maxLogs, values),
-      },
-      ...(config.sandbox?.() ?? {}),
-    };
-
-    // We use dynamic import so this stays compatible with bundlers
-    // that don't resolve node builtins statically.
-    session.completionPromise = (async () => {
-      const { Script, createContext } = await import("node:vm");
-
-      const vmContext = createContext(sandbox, {
-        name: config.name ?? "js-code-execution",
-        codeGeneration: { strings: false, wasm: false },
-      });
-
-      const wrappedSource = `(async () => {\n${source}\n})()`;
-      const value = await new Script(wrappedSource).runInContext(vmContext, {
-        timeout: timeoutMs,
-      });
-
-      return {
-        value,
-        logs: cloneValue(logs),
-        toolHistory: cloneValueIfPossible(toolHistory),
-      } satisfies JavaScriptProgrammaticExecutionResult;
-    })().then(
-      (result) => {
-        session.state = "completed";
-        session.result = result;
-        return result;
-      },
-      (err) => {
-        session.state = "error";
-        session.error = err instanceof Error ? err : new Error(String(err));
-        throw session.error;
-      },
-    );
 
     sessions.set(executionId, session);
     return session;
   }
 
-  /**
-   * Wait until the session either needs a tool result or is done.
-   * Returns the session in its current state.
-   */
-  async function waitForSuspendOrComplete(
-    session: CodeExecutionSession,
-  ): Promise<CodeExecutionSession> {
-    // If already in a terminal or suspended state, return immediately.
-    if (session.state !== "running") return session;
-
-    // Use the existing stateChangePromise if the sandbox already changed state
-    // before we got here (stateChangeNotify was called before we started waiting).
-    // If stateChangePromise is already resolved, Promise.race returns immediately.
-    const timeoutPromise = new Promise<"timeout">((resolve) =>
-      setTimeout(() => resolve("timeout"), timeoutMs),
-    );
-
-    const winner = await Promise.race([
-      session.completionPromise.then(
-        () => "completed" as const,
-        () => "errored" as const,
-      ),
-      session.stateChangePromise ??
-        new Promise<"suspended">((resolve) => {
-          session.stateChangeNotify = () => resolve("suspended");
-          session.stateChangePromise = undefined; // will be recreated if needed
-        }),
-      timeoutPromise,
-    ]);
-
-    if (winner === "timeout" && session.state === "running") {
-      session.state = "error";
-      session.error = new Error(
-        `Code execution timed out after ${timeoutMs}ms`,
-      );
-      throw session.error;
+  function findSessionByPendingToolCall(
+    toolCallId: string,
+  ): CodeExecutionSession | undefined {
+    for (const session of sessions.values()) {
+      if (
+        session.handle.state === "waiting_for_tool_result" &&
+        session.handle.pendingToolCall?.toolCallId === toolCallId
+      ) {
+        return session;
+      }
     }
 
-    return session;
+    return undefined;
   }
 
   // ── middleware: intercept incoming tool_result for a pending session ──
@@ -853,37 +707,31 @@ export function createJavaScriptCodeExecutionPlugin(
       const toolCallId = msg.tool_call_id;
       if (typeof toolCallId !== "string") continue;
 
-      for (const session of sessions.values()) {
-        if (
-          session.state === "waiting_for_tool_result" &&
-          session.pendingToolCall?.toolCallId === toolCallId &&
-          session.resolve
-        ) {
-          const content = msg.content;
-          let parsed: unknown;
-          if (typeof content === "string") {
-            try {
-              parsed = JSON.parse(content);
-            } catch {
-              parsed = content;
-            }
-          } else {
-            parsed = content;
-          }
+      const session = findSessionByPendingToolCall(toolCallId);
+      if (!session) continue;
 
-          // Resume the sandbox!
-          session.resolve(parsed);
-
-          // Mark this request as resuming a specific execution session.
-          // Replace messages with a simple dummy so AI SDK doesn't choke on
-          // content:null assistant messages.
-          setResumeSessionId(ctx.request, session.executionId);
-          ctx.request.messages = [
-            { role: "user", content: "__code_execution_resume__" },
-          ];
-          return;
+      const content = msg.content;
+      let parsed: unknown;
+      if (typeof content === "string") {
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          parsed = content;
         }
+      } else {
+        parsed = content;
       }
+
+      session.handle.resumeToolResult(toolCallId, parsed);
+
+      // Mark this request as resuming a specific execution session.
+      // Replace messages with a simple dummy so AI SDK doesn't choke on
+      // content:null assistant messages.
+      setResumeSessionId(ctx.request, session.executionId);
+      ctx.request.messages = [
+        { role: "user", content: "__code_execution_resume__" },
+      ];
+      return;
     }
   };
 
@@ -907,15 +755,14 @@ export function createJavaScriptCodeExecutionPlugin(
         const session = sessions.get(resumeExecutionId);
         if (!session) return;
 
-        // Yield multiple times to let sandbox's async continuation run.
-        // The sandbox needs microtask processing after resolve().
-        for (let i = 0; i < 10 && session.state === "running"; i++) {
-          await new Promise<void>((r) => setImmediate(r));
-        }
-        await waitForSuspendOrComplete(session);
+        const handle = session.handle;
+        await handle.waitForSuspendOrComplete();
 
-        if (session.state === "waiting_for_tool_result") {
-          const pending = session.pendingToolCall!;
+        if (
+          handle.state === "waiting_for_tool_result" &&
+          handle.pendingToolCall
+        ) {
+          const pending = handle.pendingToolCall;
           ctx.overrideResult = {
             text: null,
             toolCalls: [
@@ -931,13 +778,14 @@ export function createJavaScriptCodeExecutionPlugin(
           return;
         }
 
-        if (session.state === "completed" && session.result) {
+        if (handle.state === "completed" && handle.result) {
           const finalValue = config.mapExecutionResult
-            ? await config.mapExecutionResult(session.result)
-            : session.result.value;
+            ? await config.mapExecutionResult(handle.result)
+            : handle.result.value;
 
           const serialized = defaultSerializeToolResult(finalValue);
           sessions.delete(session.executionId);
+          handle.dispose();
 
           const nextMessages = session.modelRequestMessages
             ? cloneValue(session.modelRequestMessages)
@@ -971,9 +819,10 @@ export function createJavaScriptCodeExecutionPlugin(
           return;
         }
 
-        if (session.state === "error") {
+        if (handle.state === "error") {
           sessions.delete(session.executionId);
-          throw session.error ?? new Error("Code execution failed");
+          handle.dispose();
+          throw handle.error ?? new Error("Code execution failed");
         }
         return;
       }
@@ -1000,17 +849,19 @@ export function createJavaScriptCodeExecutionPlugin(
       if (!source) return;
 
       const executionId = generateId();
-      const session = startSession(executionId, source, codeToolCall.input);
+      const session = await startSession(executionId, source, codeToolCall.input);
       session.executionToolCallId = codeToolCall.toolCallId;
       session.modelRequestMessages = cloneValue(ctx.request.messages);
       session.assistantToolCallMessage = toAssistantToolCallMessage(result);
 
-      // Wait for the sandbox to either suspend (needs a tool) or complete.
-      await new Promise<void>((r) => setImmediate(r));
-      await waitForSuspendOrComplete(session);
+      const handle = session.handle;
+      await handle.waitForSuspendOrComplete();
 
-      if (session.state === "waiting_for_tool_result") {
-        const pending = session.pendingToolCall!;
+      if (
+        handle.state === "waiting_for_tool_result" &&
+        handle.pendingToolCall
+      ) {
+        const pending = handle.pendingToolCall;
 
         // Respond to the OpenAI caller with the tool call the sandbox needs.
         ctx.overrideResult = {
@@ -1030,12 +881,12 @@ export function createJavaScriptCodeExecutionPlugin(
         return;
       }
 
-      if (session.state === "completed" && session.result) {
+      if (handle.state === "completed" && handle.result) {
         // The code ran to completion without needing any external tools.
         // Feed the result back to the model as a tool_result via runModel.
         const finalValue = config.mapExecutionResult
-          ? await config.mapExecutionResult(session.result)
-          : session.result.value;
+          ? await config.mapExecutionResult(handle.result)
+          : handle.result.value;
 
         const serialized = defaultSerializeToolResult(finalValue);
 
@@ -1060,12 +911,14 @@ export function createJavaScriptCodeExecutionPlugin(
         });
         ctx.overrideResult = modelResult;
         sessions.delete(executionId);
+        handle.dispose();
         return;
       }
 
-      if (session.state === "error") {
+      if (handle.state === "error") {
         sessions.delete(executionId);
-        throw session.error ?? new Error("Code execution failed");
+        handle.dispose();
+        throw handle.error ?? new Error("Code execution failed");
       }
     },
   };

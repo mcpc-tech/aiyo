@@ -67,6 +67,7 @@ const acp2openai = createACP2OpenAI({
         "search_knowledge",
       ],
       mapExecutionResult: async (result) => {
+        console.log("[PTC] Generated code:\n" + result.source);
         console.log("[PTC] Done:", {
           value: result.value,
           logs: result.logs,

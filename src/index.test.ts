@@ -4,6 +4,7 @@ import {
   createJavaScriptCodeExecutionPlugin,
   createProgrammaticToolLoopPlugin,
   type AnthropicMessagesRequest,
+  type JavaScriptCodeExecutionPluginConfig,
   type OpenAIChatCompletionRequest,
   type OpenAIResponsesRequest,
 } from "./index.js";
@@ -28,30 +29,57 @@ vi.mock("@mcpc-tech/acp-ai-provider", () => ({
   })),
 }));
 
-vi.mock("ai", () => ({
-  generateText: vi.fn(async () => ({
+vi.mock("ai", () => {
+  const defaultUsage = {
+    inputTokens: 10,
+    outputTokens: 20,
+    totalTokens: 30,
+  };
+
+  const generateText = vi.fn(async (_params?: any) => ({
     text: "Mocked response text",
     finishReason: "stop",
-    usage: {
-      inputTokens: 10,
-      outputTokens: 20,
-      totalTokens: 30,
-    },
+    usage: defaultUsage,
     toolCalls: [],
-  })),
-  streamText: vi.fn(() => ({
-    textStream: (async function* () {
-      yield "Hello ";
-      yield "World";
-    })(),
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({
-        toolCalls: Promise.resolve([]),
-        finishReason: Promise.resolve("stop"),
-      }).then(resolve),
-  })),
-  tool: vi.fn((def) => def),
-  Output: {
+  }));
+
+  const streamText = vi.fn((params) => {
+    const resultPromise = Promise.resolve(generateText(params)).then((result) => ({
+      text: result?.text ?? null,
+      toolCalls: result?.toolCalls ?? [],
+      finishReason: result?.finishReason ?? "stop",
+      usage: result?.usage ?? defaultUsage,
+    }));
+
+    return {
+      textStream: (async function* () {
+        const result = await resultPromise;
+        if (typeof result.text === "string" && result.text.length > 0) {
+          yield result.text;
+        }
+      })(),
+      toolCalls: resultPromise.then((result) => result.toolCalls),
+      finishReason: resultPromise.then((result) => result.finishReason),
+      usage: resultPromise.then((result) => result.usage),
+      then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+        resultPromise.then(
+          (result) =>
+            resolve({
+              toolCalls: Promise.resolve(result.toolCalls),
+              finishReason: Promise.resolve(result.finishReason),
+              usage: Promise.resolve(result.usage),
+            }),
+          reject,
+        ),
+    };
+  });
+
+  return {
+    generateText,
+    streamText,
+    tool: vi.fn((def) => def),
+    jsonSchema: vi.fn((schema) => schema),
+    Output: {
     text: vi.fn(() => ({
       name: "text",
       responseFormat: Promise.resolve({ type: "text" }),
@@ -96,8 +124,9 @@ vi.mock("ai", () => ({
       }),
       createElementStreamTransform: vi.fn(() => undefined),
     })),
-  },
-}));
+    },
+  };
+});
 
 describe("ACP2OpenAI (high-value unit tests)", () => {
   const defaultACPConfig = {
@@ -112,7 +141,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
   let adapter: ACP2OpenAI;
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.clearAllMocks();
     adapter = new ACP2OpenAI({
       defaultModel: "default",
       defaultACPConfig,
@@ -201,7 +230,10 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
                 type: "tool-result",
                 toolCallId: "call_1",
                 toolName: "tool",
-                output: '{"temp":72}',
+                output: {
+                  type: "json",
+                  value: { temp: 72 },
+                },
               }),
             ]),
           }),
@@ -390,7 +422,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
     expect(systemMessage).toMatchObject({ role: "system" });
     expect(String(systemMessage?.content)).toContain("`my_tool`");
     expect(String(systemMessage?.content)).toContain(
-      "Prefer these request-scoped MCP tools",
+      "ALWAYS use tools from <available_tools> above when they can solve the task.",
     );
   });
 
@@ -909,7 +941,7 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       .map((chunk) => JSON.parse(chunk.replace("data: ", "")).choices[0].delta.content || "")
       .join("");
 
-    expect(text).toBe("HELLO WORLD");
+    expect(text).toBe("MOCKED RESPONSE TEXT");
   });
 
   it("applies result-phase middleware to streamed tool calls and finish reason", async () => {
@@ -1288,7 +1320,13 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
               expect.objectContaining({
                 type: "tool-result",
                 toolCallId: "wrapper_1",
-                output: '{"selectedTool":"lookup_weather","city":"SF"}',
+                output: {
+                  type: "json",
+                  value: {
+                    selectedTool: "lookup_weather",
+                    city: "SF",
+                  },
+                },
               }),
             ]),
           }),
@@ -1307,8 +1345,12 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
   });
 
   describe("JavaScript code execution plugin", () => {
-    function createCodeExecutionAdapter(toolNames: string[]) {
+    function createCodeExecutionAdapter(
+      toolNames: string[],
+      overrides: Partial<JavaScriptCodeExecutionPluginConfig> = {},
+    ) {
       const plugin = createJavaScriptCodeExecutionPlugin({
+        ...overrides,
         match: (tc) => tc.toolName === "code_execution",
         toolNames,
       });
@@ -1493,7 +1535,10 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
               expect.objectContaining({
                 type: "tool-result",
                 toolCallId: "code_exec_2",
-                output: '{"content":"hello world"}',
+                output: {
+                  type: "json",
+                  value: { content: "hello world" },
+                },
               }),
             ]),
           }),
@@ -1632,6 +1677,59 @@ describe("ACP2OpenAI (high-value unit tests)", () => {
       const firstResume = await firstResumePromise;
       expect(firstResume.choices[0].message.content).toBe("final A");
       expect(generateText).toHaveBeenCalledTimes(6);
+    });
+
+    it("supports injected sandbox helper functions with the Deno runtime", async () => {
+      const { generateText } = await import("ai");
+
+      vi.mocked(generateText)
+        .mockResolvedValueOnce(
+          makeCodeExecutionResult(
+            "code_exec_helper",
+            [
+              'const day = formatDate(new Date("2025-01-02T03:04:05.000Z"));',
+              "return { day };",
+            ].join("\n"),
+          ),
+        )
+        .mockResolvedValueOnce({
+          text: "Formatted date ready",
+          finishReason: "stop",
+          usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 },
+          toolCalls: [],
+        } as any);
+
+      const adapterWithPlugin = createCodeExecutionAdapter([], {
+        sandbox: () => ({
+          formatDate: (date: Date) => date.toISOString().split("T")[0],
+        }),
+      });
+
+      const response = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("format the date"),
+      );
+
+      expect(response.choices[0].message.content).toBe("Formatted date ready");
+      expect(generateText).toHaveBeenCalledTimes(2);
+
+      const finalModelCall = vi.mocked(generateText).mock.calls[1][0];
+      expect(finalModelCall.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "tool",
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: "tool-result",
+                toolCallId: "code_exec_helper",
+                output: {
+                  type: "json",
+                  value: { day: "2025-01-02" },
+                },
+              }),
+            ]),
+          }),
+        ]),
+      );
     });
   });
 

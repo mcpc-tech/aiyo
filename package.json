@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "@mcpc-tech/acp-ai-provider": "^0.3.1",
+    "@mcpc-tech/handle-sandbox": "^0.0.11",
     "ai": "^6.0.116"
   },
   "devDependencies": {

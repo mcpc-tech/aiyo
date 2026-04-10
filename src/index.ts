@@ -3007,6 +3007,9 @@ export {
   createJavaScriptProgrammaticToolLoopPlugin,
   createProgrammaticToolLoopPlugin,
 } from "./programmatic-tool-loop-plugin.js";
+export {
+  createDenoCodeExecutionRuntimeFactory,
+} from "./code-execution-runtime.js";
 export type {
   CodeExecutionPendingToolCall,
   CodeExecutionSession,
@@ -3023,3 +3026,9 @@ export type {
   ProgrammaticToolLoopToolCall,
   ProgrammaticToolLoopToolResultStep,
 } from "./programmatic-tool-loop-plugin.js";
+export type {
+  CodeExecutionRuntimeFactory,
+  CodeExecutionRuntimeHandle,
+  CreateCodeExecutionRuntimeParams,
+  DenoCodeExecutionRuntimeFactoryConfig,
+} from "./code-execution-runtime.js";
