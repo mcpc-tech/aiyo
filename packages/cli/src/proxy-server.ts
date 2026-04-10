@@ -144,7 +144,11 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
       const body = await readBody(req);
       const headers = new Headers(
         Object.entries(req.headers).flatMap(([k, v]) =>
-          typeof v === "string" ? [[k, v]] : Array.isArray(v) ? [[k, v.join(", ")]] : [],
+          typeof v === "string"
+            ? [[k, v] as [string, string]]
+            : Array.isArray(v)
+              ? [[k, v.join(", ")] as [string, string]]
+              : [],
         ),
       );
 

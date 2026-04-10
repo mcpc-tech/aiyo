@@ -36,14 +36,14 @@ function buildClaudeSettings(baseURL: string, model: string): string {
   });
 }
 
-export async function launchClaudeCode(options: ClaudeCodeLaunchOptions): Promise<void> {
+export function launchClaudeCode(options: ClaudeCodeLaunchOptions): void {
   const args = [
     "--settings",
     buildClaudeSettings(options.baseURL, options.model),
     ...options.extraArgs,
   ];
 
-  await runInteractiveCommand("claude", args, {
+  runInteractiveCommand("claude", args, {
     cwd: options.cwd,
     env: buildClaudeEnv(options.baseURL, options.model),
   });

@@ -98,7 +98,7 @@ addSharedOptions(cli.command("launch opencode", "Start proxy + launch opencode I
     const server = await startProxyServer(config);
     console.error(`[aiyo] Proxy at ${server.baseURL}  model=${config.model}  ptc=${config.ptc}`);
     try {
-      await launchOpenCode({
+      launchOpenCode({
         baseURL: server.baseURL,
         model: config.model,
         cwd: config.cwd,
@@ -117,15 +117,15 @@ addSharedOptions(
   const config = buildConfig(opts);
   const server = await startProxyServer(config);
   console.error(`[aiyo] Proxy at ${server.baseURL}  model=${config.model}  ptc=${config.ptc}`);
-  try {
-    await launchClaudeCode({
-      baseURL: server.baseURL,
-      model: config.model,
-      cwd: config.cwd,
-      extraArgs: [],
-    });
-  } finally {
-    await server.close();
+    try {
+      launchClaudeCode({
+        baseURL: server.baseURL,
+        model: config.model,
+        cwd: config.cwd,
+        extraArgs: [],
+      });
+    } finally {
+      await server.close();
   }
 });
 
