@@ -19,8 +19,8 @@ import { createAiyo } from "@mcpc-tech/aiyo-acp";
 const adapter = createAiyo({
   defaultModel: "default",
   defaultACPConfig: {
-    command: "codebuddy",
-    args: ["--acp"],
+    command: "opencode",
+    args: ["acp"],
     session: {
       cwd: process.cwd(),
       mcpServers: [],
@@ -51,8 +51,8 @@ You can still choose the ACP session per request:
 ```ts
 extra_body: {
   acpConfig: {
-    command: "codebuddy",
-    args: ["--acp"],
+    command: "opencode",
+    args: ["acp"],
     session: {
       cwd: process.cwd(),
       mcpServers: [],

@@ -78,8 +78,8 @@ import { createAiyo } from "@mcpc-tech/aiyo-acp";
 const adapter = createAiyo({
   defaultModel: "default",
   defaultACPConfig: {
-    command: "codebuddy",
-    args: ["--acp"],
+    command: "opencode",
+    args: ["acp"],
     session: {
       cwd: process.cwd(),
       mcpServers: [],
@@ -189,8 +189,8 @@ Example config:
   "port": 3456,
   "defaultModel": "default",
   "acp": {
-    "command": "codebuddy",
-    "args": ["--acp"],
+    "command": "opencode",
+    "args": ["acp"],
     "cwd": "/path/to/workspace"
   }
 }

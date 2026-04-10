@@ -75,9 +75,9 @@ export function resolveLaunchConfig(overrides: LaunchOverrides = {}): LaunchConf
     host: overrides.host || process.env.HOST || file.host || "127.0.0.1",
     port: Number(overrides.port || process.env.PORT || file.port || 3456),
     model: overrides.model || process.env.ACP_MODEL || file.defaultModel || "default",
-    acpCommand: overrides.acpCommand || process.env.ACP_COMMAND || file.acp?.command || "codebuddy",
-    // codebuddy: ["--acp"], opencode: ["acp"]
-    acpArgs: overrides.acpArgs || parseACPArgs(process.env.ACP_ARGS, file.acp?.args || ["--acp"]),
+    acpCommand: overrides.acpCommand || process.env.ACP_COMMAND || file.acp?.command || "opencode",
+    // ACP command: opencode acp
+    acpArgs: overrides.acpArgs || parseACPArgs(process.env.ACP_ARGS, file.acp?.args || ["acp"]),
     acpEnv: file.acp?.env,
     cwd: overrides.cwd || process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
   };
