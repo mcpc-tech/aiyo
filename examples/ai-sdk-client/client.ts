@@ -151,8 +151,7 @@ const tools = {
     execute: async ({ year }) => {
       console.log(`  [tool] get_launch_count called with year=${year}`);
       // Mock data: more launches in recent years
-      const launches =
-        year === 2026 ? 42 : year === 2025 ? 38 : year === 2024 ? 35 : 30;
+      const launches = year === 2026 ? 42 : year === 2025 ? 38 : year === 2024 ? 35 : 30;
       return { year, launches };
     },
   }),
@@ -165,13 +164,10 @@ const tools = {
     }),
     outputSchema: jsonSchema(toolOutputSchemas.get_weather as any),
     execute: async ({ city, country }) => {
-      console.log(
-        `  [tool] get_weather called for ${city}${country ? `, ${country}` : ""}`,
-      );
+      console.log(`  [tool] get_weather called for ${city}${country ? `, ${country}` : ""}`);
       // Mock weather data
       const conditions = ["sunny", "cloudy", "rainy", "partly cloudy"];
-      const condition =
-        conditions[Math.floor(Math.random() * conditions.length)];
+      const condition = conditions[Math.floor(Math.random() * conditions.length)];
       const temperature = 15 + Math.floor(Math.random() * 20);
       return { city, country, temperature, condition, unit: "celsius" };
     },
@@ -182,9 +178,7 @@ const tools = {
     inputSchema: z.object({
       expression: z
         .string()
-        .describe(
-          'Mathematical expression to evaluate (e.g., "2 + 2", "sqrt(16)")',
-        ),
+        .describe('Mathematical expression to evaluate (e.g., "2 + 2", "sqrt(16)")'),
     }),
     outputSchema: jsonSchema(toolOutputSchemas.calculate as any),
     execute: async ({ expression }) => {
@@ -205,9 +199,7 @@ const tools = {
       timezone: z
         .string()
         .optional()
-        .describe(
-          'Timezone (e.g., "UTC", "America/New_York"). Defaults to local time.',
-        ),
+        .describe('Timezone (e.g., "UTC", "America/New_York"). Defaults to local time.'),
     }),
     outputSchema: jsonSchema(toolOutputSchemas.get_current_time as any),
     execute: async ({ timezone }) => {
@@ -228,16 +220,11 @@ const tools = {
     description: "Search a knowledge base for information.",
     inputSchema: z.object({
       query: z.string().describe("Search query"),
-      limit: z
-        .number()
-        .optional()
-        .describe("Maximum number of results (default: 5)"),
+      limit: z.number().optional().describe("Maximum number of results (default: 5)"),
     }),
     outputSchema: jsonSchema(toolOutputSchemas.search_knowledge as any),
     execute: async ({ query, limit = 5 }) => {
-      console.log(
-        `  [tool] search_knowledge called with query: "${query}" (limit: ${limit})`,
-      );
+      console.log(`  [tool] search_knowledge called with query: "${query}" (limit: ${limit})`);
       // Mock search results
       return {
         query,
@@ -278,8 +265,7 @@ async function main() {
       },
       {
         role: "user",
-        content:
-          "How many rockets launched this year and what's the weather like in Paris?",
+        content: "How many rockets launched this year and what's the weather like in Paris?",
       },
     ],
     tools,

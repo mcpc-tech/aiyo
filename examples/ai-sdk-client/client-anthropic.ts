@@ -71,8 +71,7 @@ async function main() {
     messages: [
       {
         role: "user",
-        content:
-          "What is the status of order ORD-2026-0007 and what's the weather in Paris?",
+        content: "What is the status of order ORD-2026-0007 and what's the weather in Paris?",
       },
     ],
     tools,

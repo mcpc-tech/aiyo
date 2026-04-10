@@ -145,9 +145,7 @@ The PTC orchestrator should depend on a runtime interface rather than on one con
 
 ```ts
 export interface CodeExecutionRuntimeFactory {
-  createExecution(
-    params: CreateExecutionParams,
-  ): Promise<CodeExecutionHandle>;
+  createExecution(params: CreateExecutionParams): Promise<CodeExecutionHandle>;
 }
 
 export interface CreateExecutionParams {
@@ -166,10 +164,7 @@ export interface CreateExecutionParams {
 export interface CodeExecutionHandle {
   getExecutionId(): string;
   waitForEvent(): Promise<CodeExecutionEvent>;
-  resumeToolResult(params: {
-    toolCallId: string;
-    value: unknown;
-  }): Promise<void>;
+  resumeToolResult(params: { toolCallId: string; value: unknown }): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -244,13 +239,16 @@ The Deno runtime is responsible for:
 Inside the sandbox, the host injects one internal bridge such as `__callTool(...)`. The runtime then bootstraps a public `tools` object on top of it:
 
 ```js
-const tools = new Proxy({}, {
-  get(_, toolName) {
-    return async (args = {}) => {
-      return await __callTool({ toolName: String(toolName), args });
-    };
-  }
-});
+const tools = new Proxy(
+  {},
+  {
+    get(_, toolName) {
+      return async (args = {}) => {
+        return await __callTool({ toolName: String(toolName), args });
+      };
+    },
+  },
+);
 ```
 
 This keeps the public PTC programming model stable while centralizing validation, queueing, and logging in one bridge path.

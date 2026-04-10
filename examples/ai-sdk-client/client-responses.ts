@@ -76,8 +76,7 @@ async function main() {
     messages: [
       {
         role: "user",
-        content:
-          "What is the status of order ORD-2026-0007 and what's the weather in Tokyo?",
+        content: "What is the status of order ORD-2026-0007 and what's the weather in Tokyo?",
       },
     ],
     tools,
@@ -94,11 +93,7 @@ async function main() {
         console.log("\n[Tool Call]", chunk.toolName, chunk.input);
         break;
       case "tool-result":
-        console.log(
-          "[Tool Result]",
-          chunk.toolName,
-          JSON.stringify(chunk.output),
-        );
+        console.log("[Tool Result]", chunk.toolName, JSON.stringify(chunk.output));
         break;
       case "finish":
         console.log("\n[Finish]", chunk.finishReason);

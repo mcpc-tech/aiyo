@@ -50,9 +50,7 @@ const adapter = createACP2OpenAI({
     createJavaScriptCodeExecutionPlugin({
       name: "ptc",
       toolNames,
-      mapExecutionResult: async (
-        result: JavaScriptProgrammaticExecutionResult,
-      ) => {
+      mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
         console.log("[ptc-server] Generated code:\n" + result.source);
         console.log("[ptc-server] Execution result:", {
           value: result.value,
@@ -76,13 +74,7 @@ app.get("/", (c) =>
     mode: "ptc",
     provider: baseURL,
     model: defaultModel,
-    endpoints: [
-      "/health",
-      "/v1/models",
-      "/v1/chat/completions",
-      "/v1/responses",
-      "/v1/messages",
-    ],
+    endpoints: ["/health", "/v1/models", "/v1/chat/completions", "/v1/responses", "/v1/messages"],
   }),
 );
 
@@ -115,6 +107,4 @@ console.log(`🚀 PTC server running on http://127.0.0.1:${port}`);
 console.log(`🧠 Provider: ${baseURL}`);
 console.log(`🤖 Model: ${defaultModel}`);
 console.log(`🛠️ Tools: ${toolNames.join(", ")}`);
-console.log(
-  "📋 Endpoints: /health, /v1/models, /v1/chat/completions, /v1/responses, /v1/messages",
-);
+console.log("📋 Endpoints: /health, /v1/models, /v1/chat/completions, /v1/responses, /v1/messages");
