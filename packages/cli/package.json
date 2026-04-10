@@ -14,7 +14,7 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsdown && pnpm exec tsc -p tsconfig.json --emitDeclarationOnly && cp dist/packages/cli/src/index.d.ts dist/index.d.ts && cp dist/packages/cli/src/index.d.ts.map dist/index.d.ts.map",
+    "build": "tsdown",
     "dev": "tsx src/index.ts",
     "launch": "tsx src/index.ts launch",
     "typecheck": "tsc -p tsconfig.json --noEmit"

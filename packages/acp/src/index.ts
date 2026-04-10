@@ -154,7 +154,7 @@ function enhanceConfig(config: AiyoConfig = {}): CoreAiyoConfig {
   };
 }
 
-export class AiyoAdapter extends CoreAiyo {
+export class AiyoAdapter extends CoreAiyoAdapter {
   constructor(config: AiyoConfig = {}) {
     super(enhanceConfig(config));
   }
