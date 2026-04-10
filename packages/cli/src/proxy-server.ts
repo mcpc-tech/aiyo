@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createAiyo } from "@mcpc-tech/aiyo";
+import { createAiyo, type AiyoMiddleware } from "@mcpc-tech/aiyo";
 import {
   createJavaScriptCodeExecutionPlugin,
   type JavaScriptProgrammaticExecutionResult,
@@ -67,7 +67,7 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
       ? [
           createJavaScriptCodeExecutionPlugin({
             name: "ptc",
-            toolNames: config.ptcToolNames ?? [],
+            toolNames: config.ptcToolNames ?? ["*"],
             mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
               console.error(
                 "[aiyo-cli] PTC code:\n" + result.source,

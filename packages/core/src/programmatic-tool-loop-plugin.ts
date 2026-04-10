@@ -114,7 +114,8 @@ export interface JavaScriptCodeExecutionPluginConfig {
   ) => boolean;
   /** Extract JS source from tool call input. Default: input.code / input.javascript / input.js */
   getCode?: (toolCall: ProgrammaticToolLoopToolCall) => string | undefined;
-  /** Names of the tools that the JS code is allowed to call (these are the real OpenAI tools). */
+  /** Names of the tools that the JS code is allowed to call (these are the real OpenAI tools).
+   * Use `["*"]` to intercept all function tools from the request. */
   toolNames: string[];
   /**
    * The name of the single tool exposed to the model. Default: "code_execution".
@@ -565,11 +566,15 @@ export function createJavaScriptCodeExecutionPlugin(
     const originalTools = ctx.request.tools;
     if (!originalTools || originalTools.length === 0) return;
 
-    // Filter to only function tools that are in our toolNames list
+    // toolNames: ["*"] means intercept ALL function tools from the request.
+    // Otherwise filter to only the specified tool names.
+    const matchAll = config.toolNames.length === 1 && config.toolNames[0] === "*";
     const toolNamesSet = new Set(config.toolNames);
     const relevantTools = originalTools.filter(
       (t): t is OpenAIToolDefinition =>
-        t.type === "function" && !!t.function?.name && toolNamesSet.has(t.function.name),
+        t.type === "function" &&
+        !!t.function?.name &&
+        (matchAll || toolNamesSet.has(t.function.name)),
     );
 
     if (relevantTools.length === 0) return;
