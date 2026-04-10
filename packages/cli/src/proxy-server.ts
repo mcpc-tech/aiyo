@@ -141,6 +141,12 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
 
       // Proxy to adapter
       const body = await readBody(req);
+      if (body && req.url?.includes("/chat/completions")) {
+        try {
+          const parsed = JSON.parse(body);
+          logger.debug({ messages: parsed.messages, tools: parsed.tools }, "incoming request");
+        } catch {}
+      }
       const headers = new Headers(
         Object.entries(req.headers).flatMap(([k, v]) =>
           typeof v === "string"

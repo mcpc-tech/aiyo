@@ -12,6 +12,7 @@ const logFile = join(logDir, `aiyo-${new Date().toISOString().slice(0, 10)}.log`
 export const logger = pino(
   {
     level: process.env.AIYO_LOG_LEVEL ?? "info",
+    timestamp: pino.stdTimeFunctions.isoTime,
   },
   pino.multistream([
     // Human-readable to stderr
