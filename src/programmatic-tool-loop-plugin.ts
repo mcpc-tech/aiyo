@@ -10,6 +10,9 @@ import type {
   ACP2OpenAIMiddleware,
   OpenAIChatCompletionRequest,
 } from "./index.js";
+import type {
+  ChatCompletionToolChoiceOption,
+} from "openai/resources/chat/completions";
 
 export interface ProgrammaticToolLoopToolCall {
   toolCallId: string;
@@ -637,7 +640,10 @@ export function createJavaScriptCodeExecutionPlugin(
 
     if (hasSystemMessage) {
       // Append to existing system message
-      const existing = ctx.request.messages[0] as any;
+      const existing = ctx.request.messages[0] as {
+        role: "system";
+        content: string;
+      };
       existing.content =
         (typeof existing.content === "string" ? existing.content : "") +
         "\n\n" +
@@ -663,7 +669,10 @@ export function createJavaScriptCodeExecutionPlugin(
       ctx.request.tool_choice &&
       typeof ctx.request.tool_choice === "object"
     ) {
-      const tc = ctx.request.tool_choice as any;
+      const tc = ctx.request.tool_choice as ChatCompletionToolChoiceOption & {
+        type: string;
+        function?: { name: string };
+      };
       if (tc.type === "function" && tc.function?.name) {
         if (toolNamesSet.has(tc.function.name)) {
           ctx.request.tool_choice = {
@@ -909,7 +918,7 @@ export function createJavaScriptCodeExecutionPlugin(
           usage: result.usage,
           // Smuggle the execution ID so the middleware can find the session later.
           _executionId: executionId,
-        } as any;
+        };
         return;
       }
 

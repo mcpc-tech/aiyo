@@ -107,11 +107,22 @@ export interface ACP2OpenAIUsage {
   totalTokens?: number;
 }
 
+/** Raw tool call as produced by AI SDK or injected by plugins. */
+export interface RawToolCall {
+  toolCallId?: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface ACP2OpenAIFinalResult {
   text?: string | null;
-  toolCalls?: any[];
+  toolCalls?: RawToolCall[];
   finishReason?: string;
   usage?: ACP2OpenAIUsage;
+  /** @internal Used by the PTC plugin to smuggle the active execution session ID. */
+  _executionId?: string;
 }
 
 export interface ACP2OpenAIRunModelOptions {

@@ -100,6 +100,7 @@ function toJavaScriptLiteral(value: unknown, label: string): string {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- reflection: Function.prototype.toString requires any[] signature
 function toFunctionLiteral(fn: (...args: any[]) => unknown, label: string): string {
   const serialized = fn.toString();
   if (!serialized || serialized.includes("[native code]")) {
@@ -129,6 +130,7 @@ function buildWrappedSource(
     if (typeof value === "function") {
       lines.push(
         `const ${name} = ${toFunctionLiteral(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- serialising sandbox globals requires any cast
           value as (...args: any[]) => unknown,
           name,
         )};`,
