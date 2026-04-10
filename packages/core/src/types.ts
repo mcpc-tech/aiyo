@@ -42,11 +42,7 @@ export interface OpenAIExtraBody {
 
 export type AiyoEndpoint = "chat.completions" | "responses" | "messages";
 export type AiyoCallType = "generateText" | "streamText";
-export type AiyoToolChoiceValue =
-  | "auto"
-  | "none"
-  | "required"
-  | { type: "tool"; toolName: string };
+export type AiyoToolChoiceValue = "auto" | "none" | "required" | { type: "tool"; toolName: string };
 
 export interface AiyoModelCallParams {
   model: any;
@@ -145,9 +141,7 @@ export interface AiyoResultHandlerContext {
   ) => Promise<AiyoFinalResult>;
 }
 
-export type AiyoResultHandler = (
-  context: AiyoResultHandlerContext,
-) => void | Promise<void>;
+export type AiyoResultHandler = (context: AiyoResultHandlerContext) => void | Promise<void>;
 
 export interface AiyoPlugin {
   name?: string;

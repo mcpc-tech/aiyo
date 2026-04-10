@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export type ProviderType = "openai" | "acp";
 
 interface FileConfig {
@@ -20,17 +22,17 @@ export interface LaunchConfig {
   port: number;
   model: string;
   provider: ProviderType;
+  cwd: string;
   // openai provider
-  upstreamBaseURL?: string;
-  upstreamApiKey?: string;
+  upstreamBaseURL: string;
+  upstreamApiKey: string;
   // acp provider
-  acpCommand?: string;
-  acpArgs?: string[];
+  acpCommand: string;
+  acpArgs: string[];
   acpEnv?: Record<string, string>;
   // ptc
-  ptc?: boolean;
+  ptc: boolean;
   ptcToolNames?: string[];
-  cwd: string;
 }
 
 export interface LaunchOverrides {
@@ -38,67 +40,62 @@ export interface LaunchOverrides {
   port?: number;
   model?: string;
   provider?: ProviderType;
+  cwd?: string;
   upstreamBaseURL?: string;
   upstreamApiKey?: string;
   acpCommand?: string;
   acpArgs?: string[];
   ptc?: boolean;
-  cwd?: string;
 }
 
-function loadFileConfig(): FileConfig {
-  const configPath = resolve(
-    process.env.AIYO_CONFIG || "examples/hono-server/aiyo.config.json",
-  );
-  if (!existsSync(configPath)) return {};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function loadFileConfig(): FileConfig {
+  const configPath = resolve(process.env.AIYO_CONFIG || "aiyo.config.json");
+  if (!existsSync(configPath)) return {};
   try {
     return JSON.parse(readFileSync(configPath, "utf-8")) as FileConfig;
-  } catch (error) {
-    console.warn(`[aiyo-cli] Failed to parse config file ${configPath}:`, error);
+  } catch (err) {
+    console.warn(`[aiyo-cli] Failed to parse ${configPath}:`, err);
     return {};
   }
 }
 
-function parseArgList(raw: string): string[] {
-  const trimmed = raw.trim();
-  if (!trimmed) return [];
-  return trimmed.split(/\s+/).map((p) => p.trim()).filter(Boolean);
+function parseArgs(raw: string | undefined, fallback: string[]): string[] {
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : fallback;
+  } catch {
+    return raw.trim().split(/\s+/).filter(Boolean);
+  }
 }
 
-export function parseACPArgs(raw: string | undefined, fallback?: string[]): string[] {
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return parseArgList(raw);
-    }
-  }
-  return fallback ?? [];
-}
+// ─── Resolver ─────────────────────────────────────────────────────────────────
 
 export function resolveLaunchConfig(overrides: LaunchOverrides = {}): LaunchConfig {
   const file = loadFileConfig();
 
-  const provider = (overrides.provider ||
+  const provider: ProviderType =
+    overrides.provider ||
     (process.env.AIYO_PROVIDER as ProviderType | undefined) ||
-    (file.acp?.command ? "acp" : "openai")) as ProviderType;
+    (file.acp?.command ? "acp" : "openai");
 
   return {
     host: overrides.host || process.env.HOST || file.host || "127.0.0.1",
     port: Number(overrides.port || process.env.PORT || file.port || 3456),
     model: overrides.model || process.env.OPENAI_MODEL || file.defaultModel || "gpt-4o-mini",
     provider,
+    cwd: overrides.cwd || process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
     // openai
-    upstreamBaseURL: overrides.upstreamBaseURL || process.env.OPENAI_BASE_URL,
-    upstreamApiKey: overrides.upstreamApiKey || process.env.OPENAI_API_KEY,
-    // acp — env vars: ACP_COMMAND, ACP_ARGS
+    upstreamBaseURL:
+      overrides.upstreamBaseURL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+    upstreamApiKey: overrides.upstreamApiKey || process.env.OPENAI_API_KEY || "dummy",
+    // acp
     acpCommand: overrides.acpCommand || process.env.ACP_COMMAND || file.acp?.command || "opencode",
-    acpArgs: overrides.acpArgs || parseACPArgs(process.env.ACP_ARGS, file.acp?.args || ["acp"]),
+    acpArgs: overrides.acpArgs || parseArgs(process.env.ACP_ARGS, file.acp?.args || ["acp"]),
     acpEnv: file.acp?.env,
     // ptc
-    ptc: overrides.ptc ?? (process.env.AIYO_PTC === "true"),
-    cwd: overrides.cwd || process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
+    ptc: overrides.ptc ?? process.env.AIYO_PTC === "true",
   };
 }

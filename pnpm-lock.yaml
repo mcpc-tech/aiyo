@@ -151,6 +151,9 @@ importers:
       '@mcpc-tech/aiyo-ptc':
         specifier: workspace:*
         version: link:../ptc
+      cac:
+        specifier: ^7.0.0
+        version: 7.0.0
       dotenv:
         specifier: ^17.4.1
         version: 17.4.1
