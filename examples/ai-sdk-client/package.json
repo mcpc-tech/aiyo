@@ -1,0 +1,17 @@
+{
+  "name": "acp2openai-example-ai-sdk-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stream": "tsx client.ts",
+    "generate": "tsx client-generate.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.52",
+    "ai": "^6.0.116",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

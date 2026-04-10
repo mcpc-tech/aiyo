@@ -3,11 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "tsx server.ts"
+    "dev": "tsx basic-server.ts",
+    "start": "tsx basic-server.ts",
+    "basic": "tsx basic-server.ts",
+    "ptc": "tsx ptc-server.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.52",
     "@hono/node-server": "^1.19.6",
+    "@yaonyan/acp2openai-acp": "workspace:*",
+    "@yaonyan/acp2openai-compatible": "workspace:*",
+    "@yaonyan/acp2openai-ptc": "workspace:*",
     "hono": "^4.9.6"
   },
   "devDependencies": {
