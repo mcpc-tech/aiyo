@@ -7,6 +7,7 @@ import { resolveLaunchConfig, type ProviderType } from "./config.js";
 import { startProxyServer } from "./proxy-server.js";
 import { launchOpenCode } from "./opencode.js";
 import { launchClaudeCode } from "./claude-code.js";
+import { logger, logFile } from "./logger.js";
 
 // ─── Load .env (cwd first, then package root) ─────────────────────────────────
 
@@ -16,7 +17,7 @@ for (const envPath of [
 ]) {
   const { error } = dotenvConfig({ path: envPath, override: false });
   if (!error) {
-    console.error(`[aiyo] Loaded env from ${envPath}`);
+    logger.info(`Loaded env from ${envPath}`);
     break;
   }
 }
@@ -77,11 +78,9 @@ addSharedOptions(
   const config = buildConfig(opts);
   const server = await startProxyServer(config);
 
-  console.error(`[aiyo] Listening at ${server.baseURL}`);
-  console.error(`[aiyo] model=${config.model}  provider=${config.provider}  ptc=${config.ptc}`);
-  console.error(
-    `[aiyo] endpoints: /health /v1/models /v1/chat/completions /v1/responses /v1/messages`,
-  );
+  logger.info(`Listening at ${server.baseURL}`);
+  logger.info(`model=${config.model}  provider=${config.provider}  ptc=${config.ptc}`);
+  logger.info("endpoints: /health /v1/models /v1/chat/completions /v1/responses /v1/messages");
 
   await new Promise<void>((res) => {
     process.once("SIGINT", res);
@@ -101,8 +100,8 @@ addSharedOptions(
   const norm = integration === "claude-code" ? "claude" : integration;
 
   if (norm !== "opencode" && norm !== "claude") {
-    console.error(
-      `[aiyo] Unknown integration: ${integration}. Supported: opencode, claude (alias: claude-code)`,
+    logger.error(
+      `Unknown integration: ${integration}. Supported: opencode, claude (alias: claude-code)`,
     );
     process.exit(1);
   }
@@ -110,7 +109,7 @@ addSharedOptions(
   const config = buildConfig(opts);
   const server = await startProxyServer(config);
 
-  console.error(`[aiyo] Proxy at ${server.baseURL}  model=${config.model}  ptc=${config.ptc}`);
+  logger.info(`Proxy at ${server.baseURL}  model=${config.model}  ptc=${config.ptc}`);
 
   try {
     if (norm === "opencode") {

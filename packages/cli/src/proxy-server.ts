@@ -10,6 +10,7 @@ import {
   type JavaScriptProgrammaticExecutionResult,
   type JavaScriptProgrammaticToolCallRecord,
 } from "@mcpc-tech/aiyo-ptc";
+import { logger } from "./logger.js";
 import type { LaunchConfig } from "./config.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -55,15 +56,15 @@ function buildAdapter(config: LaunchConfig) {
           name: "ptc",
           toolNames: config.ptcToolNames ?? ["*"],
           mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
-            console.error("[aiyo] PTC generated code:\n" + result.source);
-            console.error(
-              "[aiyo] PTC tool calls:",
-              result.toolHistory
-                .map(
+            logger.info({ source: result.source }, "[ptc] generated code");
+            logger.info(
+              {
+                tools: result.toolHistory.map(
                   (tc: JavaScriptProgrammaticToolCallRecord) =>
                     `${tc.toolName}(${JSON.stringify(tc.args)})`,
-                )
-                .join(", "),
+                ),
+              },
+              "[ptc] tool calls",
             );
             return result.value;
           },
@@ -72,9 +73,7 @@ function buildAdapter(config: LaunchConfig) {
     : [];
 
   if (config.provider === "acp") {
-    console.error(
-      `[aiyo] Provider: acp  command: ${config.acpCommand} ${config.acpArgs.join(" ")}`,
-    );
+    logger.info(`Provider: acp  command: ${config.acpCommand} ${config.acpArgs.join(" ")}`);
     return createAiyoAcp({
       defaultModel: config.model,
       defaultACPConfig: {
@@ -87,7 +86,7 @@ function buildAdapter(config: LaunchConfig) {
     });
   }
 
-  console.error(`[aiyo] Provider: openai  base: ${config.upstreamBaseURL}`);
+  logger.info(`Provider: openai  base: ${config.upstreamBaseURL}`);
   const openai = createOpenAI({ baseURL: config.upstreamBaseURL, apiKey: config.upstreamApiKey });
   return createAiyo({
     defaultModel: config.model,
