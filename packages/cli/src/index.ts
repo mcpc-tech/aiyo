@@ -1,9 +1,20 @@
 #!/usr/bin/env node
 
+import { config as dotenvConfig } from "dotenv";
+import { resolve } from "node:path";
 import { launchClaudeCode } from "./claude-code.js";
 import { launchOpenCode } from "./opencode.js";
 import { resolveLaunchConfig } from "./config.js";
 import { startProxyServer } from "./proxy-server.js";
+
+// Load .env from cwd, then package root (first found wins)
+for (const envPath of [resolve(process.cwd(), ".env"), resolve(import.meta.dirname, "../../.env")]) {
+  const result = dotenvConfig({ path: envPath, override: false });
+  if (!result.error) {
+    console.error(`[aiyo-cli] Loaded env from ${envPath}`);
+    break;
+  }
+}
 
 interface ParsedArgs {
   command?: string;
