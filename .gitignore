@@ -3,6 +3,9 @@ node_modules
 coverage
 dist
 *.log
+# tsc declaration output accidentally emitted into src/
+src/**/*.d.ts
+src/**/*.d.ts.map
 midscene_run
 droidrun*
 acp2openai.config.json
