@@ -145,6 +145,9 @@ importers:
       '@mcpc-tech/aiyo':
         specifier: workspace:*
         version: link:../core
+      '@mcpc-tech/aiyo-acp':
+        specifier: workspace:*
+        version: link:../acp
       '@mcpc-tech/aiyo-ptc':
         specifier: workspace:*
         version: link:../ptc

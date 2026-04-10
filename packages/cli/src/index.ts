@@ -16,6 +16,8 @@ for (const envPath of [resolve(process.cwd(), ".env"), resolve(import.meta.dirna
   }
 }
 
+import type { ProviderType } from "./config.js";
+
 interface ParsedArgs {
   command?: string;
   integration?: string;
@@ -23,9 +25,12 @@ interface ParsedArgs {
   host?: string;
   port?: number;
   cwd?: string;
+  provider?: ProviderType;
   ptc?: boolean;
   upstreamBaseURL?: string;
   upstreamApiKey?: string;
+  acpCommand?: string;
+  acpArgs?: string[];
   extraArgs: string[];
 }
 
@@ -38,13 +43,21 @@ Usage:
   aiyo launch claude [options] [-- ...]    Start proxy + launch claude
 
 Options:
-  --model <name>              Model to use (default: gpt-4o-mini or OPENAI_MODEL env)
-  --host <host>               Host to bind the proxy server (default: 127.0.0.1)
-  --port <port>               Port to bind the proxy server (default: 3456)
-  --cwd <path>                Working directory for the launched client (launch only)
-  --upstream-url <url>        Upstream OpenAI-compatible base URL (or OPENAI_BASE_URL env)
-  --upstream-key <key>        Upstream API key (or OPENAI_API_KEY env)
-  --ptc                       Enable built-in Programmatic Tool Calling (PTC) plugin
+  --provider <type>           Provider: openai (default) or acp (env: AIYO_PROVIDER)
+  --model <name>              Model name (env: OPENAI_MODEL)
+  --host <host>               Bind host (default: 127.0.0.1)
+  --port <port>               Bind port (default: 3456)
+  --cwd <path>                Working directory (launch only)
+  --ptc                       Enable PTC plugin — intercepts all tools (env: AIYO_PTC=true)
+
+  OpenAI provider options:
+  --upstream-url <url>        Upstream base URL (env: OPENAI_BASE_URL)
+  --upstream-key <key>        Upstream API key (env: OPENAI_API_KEY)
+
+  ACP provider options:
+  --acp-command <cmd>         ACP command (env: ACP_COMMAND, default: opencode)
+  --acp-args <args>           ACP args JSON or space-separated (env: ACP_ARGS, default: acp)
+
   -h, --help                  Show help
 `);
 }
@@ -94,12 +107,24 @@ function parseArgs(argv: string[]): ParsedArgs {
         parsed.cwd = expectValue(head, index, token);
         index += 1;
         break;
+      case "--provider":
+        parsed.provider = expectValue(head, index, token) as ProviderType;
+        index += 1;
+        break;
       case "--upstream-url":
         parsed.upstreamBaseURL = expectValue(head, index, token);
         index += 1;
         break;
       case "--upstream-key":
         parsed.upstreamApiKey = expectValue(head, index, token);
+        index += 1;
+        break;
+      case "--acp-command":
+        parsed.acpCommand = expectValue(head, index, token);
+        index += 1;
+        break;
+      case "--acp-args":
+        parsed.acpArgs = expectValue(head, index, token).split(/\s+/).filter(Boolean);
         index += 1;
         break;
       case "--ptc":
@@ -133,8 +158,11 @@ async function runServe(parsed: ParsedArgs): Promise<void> {
     host: parsed.host,
     port: parsed.port,
     model: parsed.model,
+    provider: parsed.provider,
     upstreamBaseURL: parsed.upstreamBaseURL,
     upstreamApiKey: parsed.upstreamApiKey,
+    acpCommand: parsed.acpCommand,
+    acpArgs: parsed.acpArgs,
     ptc: parsed.ptc,
     cwd: parsed.cwd,
   });
@@ -162,8 +190,11 @@ async function runLaunch(parsed: ParsedArgs): Promise<void> {
     host: parsed.host,
     port: parsed.port,
     model: parsed.model,
+    provider: parsed.provider,
     upstreamBaseURL: parsed.upstreamBaseURL,
     upstreamApiKey: parsed.upstreamApiKey,
+    acpCommand: parsed.acpCommand,
+    acpArgs: parsed.acpArgs,
     ptc: parsed.ptc,
     cwd: parsed.cwd,
   });

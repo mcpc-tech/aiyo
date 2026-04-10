@@ -3,7 +3,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createAiyo, type AiyoMiddleware } from "@mcpc-tech/aiyo";
+import { createAiyo } from "@mcpc-tech/aiyo";
+import { createAiyo as createAiyoAcp } from "@mcpc-tech/aiyo-acp";
 import {
   createJavaScriptCodeExecutionPlugin,
   type JavaScriptProgrammaticExecutionResult,
@@ -50,38 +51,63 @@ async function handleNodeResponse(res: ServerResponse, response: Response): Prom
   await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), res);
 }
 
-export async function startProxyServer(config: LaunchConfig): Promise<RunningProxyServer> {
-  const upstreamBaseURL = config.upstreamBaseURL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const upstreamApiKey = config.upstreamApiKey || process.env.OPENAI_API_KEY || "dummy";
-  const defaultModel = config.model;
-
-  const openai = createOpenAI({ baseURL: upstreamBaseURL, apiKey: upstreamApiKey });
-
-  const adapter = createAiyo({
-    defaultModel,
-    runtimeFactory: ({ modelId }) => ({
-      model: openai.chat(modelId || defaultModel),
-      modelName: modelId || defaultModel,
+function buildPtcPlugins(config: LaunchConfig) {
+  if (!config.ptc) return [];
+  return [
+    createJavaScriptCodeExecutionPlugin({
+      name: "ptc",
+      toolNames: config.ptcToolNames ?? ["*"],
+      mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
+        console.error("[aiyo-cli] PTC code:\n" + result.source);
+        console.error(
+          "[aiyo-cli] PTC tools:",
+          result.toolHistory.map(
+            (tc: JavaScriptProgrammaticToolCallRecord) =>
+              `${tc.toolName}(${JSON.stringify(tc.args)})`,
+          ),
+        );
+        return result.value;
+      },
     }),
-    plugins: config.ptc
-      ? [
-          createJavaScriptCodeExecutionPlugin({
-            name: "ptc",
-            toolNames: config.ptcToolNames ?? ["*"],
-            mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
-              console.error(
-                "[aiyo-cli] PTC code:\n" + result.source,
-              );
-              console.error("[aiyo-cli] PTC tools:", result.toolHistory.map(
-                (tc: JavaScriptProgrammaticToolCallRecord) =>
-                  `${tc.toolName}(${JSON.stringify(tc.args)})`,
-              ));
-              return result.value;
-            },
-          }),
-        ]
-      : [],
-  });
+  ];
+}
+
+export async function startProxyServer(config: LaunchConfig): Promise<RunningProxyServer> {
+  const defaultModel = config.model;
+  const plugins = buildPtcPlugins(config);
+
+  let adapter: ReturnType<typeof createAiyo>;
+
+  if (config.provider === "acp") {
+    const acpCommand = config.acpCommand || process.env.ACP_COMMAND || "opencode";
+    const acpArgs = config.acpArgs || ["acp"];
+    console.error(`[aiyo-cli] Provider: acp (${acpCommand} ${acpArgs.join(" ")})`);
+
+    adapter = createAiyoAcp({
+      defaultModel,
+      defaultACPConfig: {
+        command: acpCommand,
+        args: acpArgs,
+        env: config.acpEnv,
+        session: { cwd: config.cwd, mcpServers: [] },
+      },
+      plugins,
+    });
+  } else {
+    const upstreamBaseURL = config.upstreamBaseURL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    const upstreamApiKey = config.upstreamApiKey || process.env.OPENAI_API_KEY || "dummy";
+    console.error(`[aiyo-cli] Provider: openai (${upstreamBaseURL})`);
+
+    const openai = createOpenAI({ baseURL: upstreamBaseURL, apiKey: upstreamApiKey });
+    adapter = createAiyo({
+      defaultModel,
+      runtimeFactory: ({ modelId }) => ({
+        model: openai.chat(modelId || defaultModel),
+        modelName: modelId || defaultModel,
+      }),
+      plugins,
+    });
+  }
 
   const server = createServer(async (req, res) => {
     try {
