@@ -1,61 +1,49 @@
-# Hono Example: Minimal Start
+# Hono Examples
 
-This example exposes an ACP command as an OpenAI-compatible HTTP server.
+This directory now keeps only **two maintained Hono servers**:
 
-## Requirements
+- `basic-server.ts`: ACP-backed OpenAI-compatible server
+- `ptc-server.ts`: direct OpenAI-compatible provider + Programmatic Tool Calling (PTC)
 
-- Node.js `>= 18`
-- `codebuddy --acp` available in `PATH`
-- If you use a different ACP command, update `examples/hono-server/acp2openai.config.json`
+## Start from repo root
 
-Default local config:
-
-```json
-{ "port": 3456, "acp": { "command": "codebuddy", "args": ["--acp"] } }
-```
-
-## Start
-
-Run from the repo root:
+### Basic server
 
 ```bash
 pnpm install
 pnpm run example:hono
 ```
 
-Server endpoints:
-
-- `http://localhost:3456/health`
-- `http://localhost:3456/v1/models`
-- `http://localhost:3456/v1/chat/completions`
-- `http://localhost:3456/v1/responses`
-- `http://localhost:3456/v1/messages`
-
-## Verify
+or explicitly:
 
 ```bash
-curl http://localhost:3456/health
+pnpm run example:hono:basic
 ```
 
-Expected:
+The basic server reads `examples/hono-server/acp2openai.config.json` through the root script.
 
-```json
-{ "status": "ok" }
-```
-
-Minimal chat request:
+### PTC server
 
 ```bash
-curl http://localhost:3456/v1/chat/completions \
-  -H 'content-type: application/json' \
-  -d '{
-    "model": "default",
-    "messages": [
-      {"role": "user", "content": "Hello"}
-    ]
-  }'
+OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
+OPENAI_API_KEY=sk-xxx \
+OPENAI_MODEL=anthropic/claude-sonnet-4 \
+pnpm run example:hono:ptc
 ```
 
-## Note
+`ptc-server.ts` also loads `.env` from either this directory or the repo root when present.
 
-The provided `pnpm run example:hono` script sets `ACP2OPENAI_CONFIG=examples/hono-server/acp2openai.config.json`, so the example uses the checked-in Hono config by default.
+## Endpoints
+
+Both servers expose:
+
+- `GET /health`
+- `GET /v1/models`
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/messages`
+
+## Notes
+
+- `example:hono` defaults to the **basic** ACP-backed server.
+- The old `server.ts`, `programmatic-tools-server.ts`, and test helper scripts were removed to keep this folder focused.
