@@ -6,7 +6,7 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yaonyan/aiyo-compatible.git"
+    "url": "git+https://github.com/mcpc-tech/aiyo.git"
   },
   "files": [
     "dist",
