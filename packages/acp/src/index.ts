@@ -54,9 +54,7 @@ export function createACPRuntimeFactory(
   defaultACPConfig?: ACPProviderSettings,
 ): ACP2RuntimeFactory {
   return ({ request, modelId }) => {
-    const provider = createACPProvider(
-      resolveACPConfig(request, defaultACPConfig),
-    );
+    const provider = createACPProvider(resolveACPConfig(request, defaultACPConfig));
     const providerTools = provider.tools as Record<string, any> | undefined;
 
     const runtime: ACP2ProviderRuntime = {
@@ -101,23 +99,18 @@ function unwrapACPToolCall(toolCall: RawToolCall): RawToolCall {
     toolName: nestedToolName,
     input: nestedInput,
     toolCallId:
-      (typeof payload.toolCallId === "string" && payload.toolCallId) ||
-      toolCall.toolCallId,
+      (typeof payload.toolCallId === "string" && payload.toolCallId) || toolCall.toolCallId,
   };
 }
 
-export function createACPToolCallNormalizer(
-  base?: ACP2ToolCallNormalizer,
-): ACP2ToolCallNormalizer {
+export function createACPToolCallNormalizer(base?: ACP2ToolCallNormalizer): ACP2ToolCallNormalizer {
   return (toolCall) => {
     const normalized = unwrapACPToolCall(toolCall);
     return base ? base(normalized) : normalized;
   };
 }
 
-export function createACPToolTransformer(
-  base?: ACP2ToolTransformer,
-): ACP2ToolTransformer {
+export function createACPToolTransformer(base?: ACP2ToolTransformer): ACP2ToolTransformer {
   return (tools, context) => {
     const transformed = base ? base(tools, context) : tools;
     if (!transformed) return undefined;
@@ -138,9 +131,7 @@ export function createACPListModelsResolver(
     try {
       const sessionInfo = await provider.initSession();
       return [
-        ...(sessionInfo.models?.availableModels ?? []).map(
-          (model) => model.modelId,
-        ),
+        ...(sessionInfo.models?.availableModels ?? []).map((model) => model.modelId),
         sessionInfo.models?.currentModelId,
         defaultModel,
         "default",
@@ -154,8 +145,7 @@ export function createACPListModelsResolver(
 function enhanceConfig(config: ACP2OpenAIConfig = {}): CoreACP2OpenAIConfig {
   return {
     ...config,
-    runtimeFactory:
-      config.runtimeFactory ?? createACPRuntimeFactory(config.defaultACPConfig),
+    runtimeFactory: config.runtimeFactory ?? createACPRuntimeFactory(config.defaultACPConfig),
     listModels:
       config.listModels ??
       createACPListModelsResolver(config.defaultACPConfig, config.defaultModel),

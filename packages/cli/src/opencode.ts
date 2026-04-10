@@ -1,10 +1,4 @@
-import {
-  mkdirSync,
-  readFileSync,
-  existsSync,
-  writeFileSync,
-  copyFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, existsSync, writeFileSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { runInteractiveCommand } from "./process-utils.js";
@@ -74,12 +68,8 @@ function updateConfig(configPath: string, baseURL: string, model: string) {
   config.$schema = "https://opencode.ai/config.json";
 
   const provider = isRecord(config.provider) ? config.provider : {};
-  const currentProvider = isRecord(provider[PROVIDER_ID])
-    ? provider[PROVIDER_ID]
-    : {};
-  const currentModels = isRecord(currentProvider.models)
-    ? currentProvider.models
-    : {};
+  const currentProvider = isRecord(provider[PROVIDER_ID]) ? provider[PROVIDER_ID] : {};
+  const currentModels = isRecord(currentProvider.models) ? currentProvider.models : {};
 
   for (const [name, value] of Object.entries(currentModels)) {
     if (isRecord(value) && value[MODEL_MARKER] === true) {
@@ -107,9 +97,7 @@ function updateConfig(configPath: string, baseURL: string, model: string) {
   writeJsonWithBackup(configPath, config);
 }
 
-export async function launchOpenCode(
-  options: OpenCodeLaunchOptions,
-): Promise<void> {
+export async function launchOpenCode(options: OpenCodeLaunchOptions): Promise<void> {
   const home = homedir();
   const configPath = join(home, ".config", "opencode", "opencode.json");
   const statePath = join(home, ".local", "state", "opencode", "model.json");

@@ -51,10 +51,7 @@ export interface ProgrammaticToolLoopPluginConfig {
   ) => boolean;
   execute: (
     context: ProgrammaticToolLoopExecuteContext,
-  ) =>
-    | Promise<ProgrammaticToolLoopStepResult | unknown>
-    | ProgrammaticToolLoopStepResult
-    | unknown;
+  ) => Promise<ProgrammaticToolLoopStepResult | unknown> | ProgrammaticToolLoopStepResult | unknown;
   prepareNextRequest?: (
     request: OpenAIChatCompletionRequest,
     context: ProgrammaticToolLoopExecuteContext,
@@ -169,14 +166,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function getDefaultJavaScriptCode(
-  toolCall: ProgrammaticToolLoopToolCall,
-): string | undefined {
-  const candidates = [
-    toolCall.input.code,
-    toolCall.input.javascript,
-    toolCall.input.js,
-  ];
+function getDefaultJavaScriptCode(toolCall: ProgrammaticToolLoopToolCall): string | undefined {
+  const candidates = [toolCall.input.code, toolCall.input.javascript, toolCall.input.js];
 
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length > 0) {
@@ -187,18 +178,14 @@ function getDefaultJavaScriptCode(
   return undefined;
 }
 
-function normalizeToolCall(
-  toolCall: any,
-): ProgrammaticToolLoopToolCall | undefined {
+function normalizeToolCall(toolCall: any): ProgrammaticToolLoopToolCall | undefined {
   if (!isRecord(toolCall)) return undefined;
   const toolCallId =
     typeof toolCall.toolCallId === "string" && toolCall.toolCallId
       ? toolCall.toolCallId
       : undefined;
   const toolName =
-    typeof toolCall.toolName === "string" && toolCall.toolName
-      ? toolCall.toolName
-      : undefined;
+    typeof toolCall.toolName === "string" && toolCall.toolName ? toolCall.toolName : undefined;
 
   if (!toolCallId || !toolName) return undefined;
 
@@ -220,9 +207,7 @@ function toAssistantToolCallMessage(
 ): OpenAIChatCompletionRequest["messages"][number] | undefined {
   const normalizedToolCalls = (result.toolCalls ?? [])
     .map((toolCall) => normalizeToolCall(toolCall))
-    .filter((toolCall): toolCall is ProgrammaticToolLoopToolCall =>
-      Boolean(toolCall),
-    );
+    .filter((toolCall): toolCall is ProgrammaticToolLoopToolCall => Boolean(toolCall));
 
   if (normalizedToolCalls.length === 0) {
     return undefined;
@@ -249,27 +234,19 @@ function defaultSerializeToolResult(output: unknown): string {
 
 const RESUME_SESSION_ID_FIELD = "__acp2openaiCodeExecutionResumeSessionId";
 
-function setResumeSessionId(
-  request: OpenAIChatCompletionRequest,
-  executionId: string,
-): void {
-  (request as OpenAIChatCompletionRequest & Record<string, unknown>)[
-    RESUME_SESSION_ID_FIELD
-  ] = executionId;
+function setResumeSessionId(request: OpenAIChatCompletionRequest, executionId: string): void {
+  (request as OpenAIChatCompletionRequest & Record<string, unknown>)[RESUME_SESSION_ID_FIELD] =
+    executionId;
 }
 
-function getResumeSessionId(
-  request: OpenAIChatCompletionRequest,
-): string | undefined {
-  const value = (
-    request as OpenAIChatCompletionRequest & Record<string, unknown>
-  )[RESUME_SESSION_ID_FIELD];
+function getResumeSessionId(request: OpenAIChatCompletionRequest): string | undefined {
+  const value = (request as OpenAIChatCompletionRequest & Record<string, unknown>)[
+    RESUME_SESSION_ID_FIELD
+  ];
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function stripResumeSessionId(
-  request: OpenAIChatCompletionRequest,
-): OpenAIChatCompletionRequest {
+function stripResumeSessionId(request: OpenAIChatCompletionRequest): OpenAIChatCompletionRequest {
   const cloned = {
     ...request,
   } as OpenAIChatCompletionRequest & Record<string, unknown>;
@@ -280,18 +257,11 @@ function stripResumeSessionId(
 function isFinalResultStep(
   value: ProgrammaticToolLoopStepResult | unknown,
 ): value is ProgrammaticToolLoopFinalResultStep {
-  return (
-    isRecord(value) && value.type === "final-result" && isRecord(value.result)
-  );
+  return isRecord(value) && value.type === "final-result" && isRecord(value.result);
 }
 
-function toToolResultOutput(
-  value: ProgrammaticToolLoopStepResult | unknown,
-): unknown {
-  if (
-    isRecord(value) &&
-    (value.type === undefined || value.type === "tool-result")
-  ) {
+function toToolResultOutput(value: ProgrammaticToolLoopStepResult | unknown): unknown {
+  if (isRecord(value) && (value.type === undefined || value.type === "tool-result")) {
     return value.output;
   }
 
@@ -315,8 +285,7 @@ export function createProgrammaticToolLoopPlugin(
     (() => {
       return true;
     });
-  const serializeToolResult =
-    config.serializeToolResult ?? defaultSerializeToolResult;
+  const serializeToolResult = config.serializeToolResult ?? defaultSerializeToolResult;
 
   return {
     name: config.name ?? "programmatic-tool-loop",
@@ -328,9 +297,7 @@ export function createProgrammaticToolLoopPlugin(
       for (let iteration = 0; iteration < maxIterations; iteration++) {
         const matchedToolCall = (currentResult.toolCalls ?? [])
           .map((toolCall) => normalizeToolCall(toolCall))
-          .filter((toolCall): toolCall is ProgrammaticToolLoopToolCall =>
-            Boolean(toolCall),
-          )
+          .filter((toolCall): toolCall is ProgrammaticToolLoopToolCall => Boolean(toolCall))
           .find((toolCall) =>
             match(toolCall, {
               iteration,
@@ -381,10 +348,7 @@ export function createProgrammaticToolLoopPlugin(
         };
 
         if (config.prepareNextRequest) {
-          currentRequest = config.prepareNextRequest(
-            cloneValue(currentRequest),
-            executeContext,
-          );
+          currentRequest = config.prepareNextRequest(cloneValue(currentRequest), executeContext);
         }
 
         currentResult = await ctx.runModel(currentRequest, {
@@ -412,9 +376,7 @@ interface OpenAIToolDefinition {
   };
 }
 
-function summarizeSchemaProperties(
-  schema: Record<string, unknown> | undefined,
-): string[] {
+function summarizeSchemaProperties(schema: Record<string, unknown> | undefined): string[] {
   const required = Array.isArray(schema?.required) ? schema.required : [];
   const props = isRecord(schema?.properties) ? schema.properties : {};
 
@@ -426,9 +388,7 @@ function summarizeSchemaProperties(
   });
 }
 
-function getToolOutputSchema(
-  tool: OpenAIToolDefinition,
-): Record<string, unknown> | undefined {
+function getToolOutputSchema(tool: OpenAIToolDefinition): Record<string, unknown> | undefined {
   const fn = tool.function;
 
   if (isRecord(fn.outputSchema)) {
@@ -444,13 +404,9 @@ function getToolOutputSchema(
 
 function buildToolSchemaBlock(tool: OpenAIToolDefinition): string {
   const fn = tool.function;
-  const paramsJson = fn.parameters
-    ? JSON.stringify(fn.parameters, null, 2)
-    : "{}";
+  const paramsJson = fn.parameters ? JSON.stringify(fn.parameters, null, 2) : "{}";
   const outputSchema = getToolOutputSchema(tool);
-  const outputJson = outputSchema
-    ? JSON.stringify(outputSchema, null, 2)
-    : undefined;
+  const outputJson = outputSchema ? JSON.stringify(outputSchema, null, 2) : undefined;
 
   const paramLines = summarizeSchemaProperties(fn.parameters);
   const outputLines = summarizeSchemaProperties(outputSchema);
@@ -461,13 +417,9 @@ function buildToolSchemaBlock(tool: OpenAIToolDefinition): string {
     `<parameters>`,
     `${paramsJson}`,
     `</parameters>`,
-    paramLines.length > 0
-      ? `<param_summary>\n${paramLines.join("\n")}\n</param_summary>`
-      : "",
+    paramLines.length > 0 ? `<param_summary>\n${paramLines.join("\n")}\n</param_summary>` : "",
     outputJson ? `<output_schema>\n${outputJson}\n</output_schema>` : "",
-    outputLines.length > 0
-      ? `<output_summary>\n${outputLines.join("\n")}\n</output_summary>`
-      : "",
+    outputLines.length > 0 ? `<output_summary>\n${outputLines.join("\n")}\n</output_summary>` : "",
     `<usage>const result = await tools.${fn.name}(${buildExampleArgs(fn.parameters)});</usage>`,
     `</tool>`,
   ]
@@ -617,18 +569,13 @@ export function createJavaScriptCodeExecutionPlugin(
     const toolNamesSet = new Set(config.toolNames);
     const relevantTools = originalTools.filter(
       (t): t is OpenAIToolDefinition =>
-        t.type === "function" &&
-        !!t.function?.name &&
-        toolNamesSet.has(t.function.name),
+        t.type === "function" && !!t.function?.name && toolNamesSet.has(t.function.name),
     );
 
     if (relevantTools.length === 0) return;
 
     // 1. Generate the system prompt
-    const systemPrompt = buildCodeExecutionSystemPrompt(
-      relevantTools,
-      codeToolName,
-    );
+    const systemPrompt = buildCodeExecutionSystemPrompt(relevantTools, codeToolName);
 
     // 2. Inject system prompt at the beginning of messages
     const hasSystemMessage =
@@ -643,30 +590,19 @@ export function createJavaScriptCodeExecutionPlugin(
         content: string;
       };
       existing.content =
-        (typeof existing.content === "string" ? existing.content : "") +
-        "\n\n" +
-        systemPrompt;
+        (typeof existing.content === "string" ? existing.content : "") + "\n\n" + systemPrompt;
     } else {
       // Prepend new system message
-      ctx.request.messages = [
-        { role: "system", content: systemPrompt },
-        ...ctx.request.messages,
-      ];
+      ctx.request.messages = [{ role: "system", content: systemPrompt }, ...ctx.request.messages];
     }
 
     // 3. Replace tools with just the code_execution tool
     ctx.request.tools = [
-      buildCodeExecutionToolDefinition(
-        codeToolName,
-        config.codeExecutionToolDescription,
-      ),
+      buildCodeExecutionToolDefinition(codeToolName, config.codeExecutionToolDescription),
     ];
 
     // 4. Adjust tool_choice if it was forcing one of the real tools
-    if (
-      ctx.request.tool_choice &&
-      typeof ctx.request.tool_choice === "object"
-    ) {
+    if (ctx.request.tool_choice && typeof ctx.request.tool_choice === "object") {
       const tc = ctx.request.tool_choice as ChatCompletionToolChoiceOption & {
         type: string;
         function?: { name: string };
@@ -717,9 +653,7 @@ export function createJavaScriptCodeExecutionPlugin(
     return session;
   }
 
-  function findSessionByPendingToolCall(
-    toolCallId: string,
-  ): CodeExecutionSession | undefined {
+  function findSessionByPendingToolCall(toolCallId: string): CodeExecutionSession | undefined {
     for (const session of sessions.values()) {
       if (
         session.handle.state === "waiting_for_tool_result" &&
@@ -767,9 +701,7 @@ export function createJavaScriptCodeExecutionPlugin(
       // Replace messages with a simple dummy so AI SDK doesn't choke on
       // content:null assistant messages.
       setResumeSessionId(ctx.request, session.executionId);
-      ctx.request.messages = [
-        { role: "user", content: "__code_execution_resume__" },
-      ];
+      ctx.request.messages = [{ role: "user", content: "__code_execution_resume__" }];
       return;
     }
   };
@@ -797,10 +729,7 @@ export function createJavaScriptCodeExecutionPlugin(
         const handle = session.handle;
         await handle.waitForSuspendOrComplete();
 
-        if (
-          handle.state === "waiting_for_tool_result" &&
-          handle.pendingToolCall
-        ) {
+        if (handle.state === "waiting_for_tool_result" && handle.pendingToolCall) {
           const pending = handle.pendingToolCall;
           ctx.overrideResult = {
             text: null,
@@ -888,11 +817,7 @@ export function createJavaScriptCodeExecutionPlugin(
       if (!source) return;
 
       const executionId = generateId();
-      const session = await startSession(
-        executionId,
-        source,
-        codeToolCall.input,
-      );
+      const session = await startSession(executionId, source, codeToolCall.input);
       session.executionToolCallId = codeToolCall.toolCallId;
       session.modelRequestMessages = cloneValue(ctx.request.messages);
       session.assistantToolCallMessage = toAssistantToolCallMessage(result);
@@ -900,10 +825,7 @@ export function createJavaScriptCodeExecutionPlugin(
       const handle = session.handle;
       await handle.waitForSuspendOrComplete();
 
-      if (
-        handle.state === "waiting_for_tool_result" &&
-        handle.pendingToolCall
-      ) {
+      if (handle.state === "waiting_for_tool_result" && handle.pendingToolCall) {
         const pending = handle.pendingToolCall;
 
         // Respond to the OpenAI caller with the tool call the sandbox needs.

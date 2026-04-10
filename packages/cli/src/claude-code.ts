@@ -36,9 +36,7 @@ function buildClaudeSettings(baseURL: string, model: string): string {
   });
 }
 
-export async function launchClaudeCode(
-  options: ClaudeCodeLaunchOptions,
-): Promise<void> {
+export async function launchClaudeCode(options: ClaudeCodeLaunchOptions): Promise<void> {
   const args = [
     "--settings",
     buildClaudeSettings(options.baseURL, options.model),

@@ -2,12 +2,12 @@
   "name": "@yaonyan/acp2openai-ptc",
   "version": "0.1.0",
   "description": "Programmatic tool calling plugin and Deno runtime for acp2openai-compatible",
-  "type": "module",
   "license": "MIT",
   "files": [
     "dist",
     "README.md"
   ],
+  "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -2,15 +2,15 @@
   "name": "@yaonyan/acp2openai-cli",
   "version": "0.1.0",
   "description": "CLI launcher for acp2openai-compatible",
-  "type": "module",
   "license": "MIT",
+  "bin": {
+    "acp2openai": "./dist/index.mjs"
+  },
   "files": [
     "dist",
     "README.md"
   ],
-  "bin": {
-    "acp2openai": "./dist/index.mjs"
-  },
+  "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -18,9 +18,6 @@
     "dev": "tsx src/index.ts",
     "launch": "tsx src/index.ts launch",
     "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "engines": {
-    "node": ">=18"
   },
   "dependencies": {
     "@yaonyan/acp2openai-acp": "workspace:*"
@@ -30,5 +27,8 @@
     "tsdown": "^0.21.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

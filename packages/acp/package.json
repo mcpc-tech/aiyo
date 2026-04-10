@@ -2,12 +2,12 @@
   "name": "@yaonyan/acp2openai-acp",
   "version": "0.1.0",
   "description": "ACP runtime integration package for acp2openai-compatible",
-  "type": "module",
   "license": "MIT",
   "files": [
     "dist",
     "README.md"
   ],
+  "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {

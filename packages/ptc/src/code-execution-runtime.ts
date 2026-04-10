@@ -26,9 +26,7 @@ export interface CreateCodeExecutionRuntimeParams {
 }
 
 export interface CodeExecutionRuntimeFactory {
-  createExecution(
-    params: CreateCodeExecutionRuntimeParams,
-  ): Promise<CodeExecutionRuntimeHandle>;
+  createExecution(params: CreateCodeExecutionRuntimeParams): Promise<CodeExecutionRuntimeHandle>;
 }
 
 export interface DenoCodeExecutionRuntimeFactoryConfig {
@@ -101,10 +99,7 @@ function toJavaScriptLiteral(value: unknown, label: string): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- reflection: Function.prototype.toString requires any[] signature
-function toFunctionLiteral(
-  fn: (...args: any[]) => unknown,
-  label: string,
-): string {
+function toFunctionLiteral(fn: (...args: any[]) => unknown, label: string): string {
   const serialized = fn.toString();
   if (!serialized || serialized.includes("[native code]")) {
     throw new Error(
@@ -125,9 +120,7 @@ function buildWrappedSource(
 
   for (const [name, value] of Object.entries(sandboxGlobals ?? {})) {
     if (!isValidJavaScriptIdentifier(name)) {
-      throw new Error(
-        `Sandbox global name \`${name}\` is not a valid JavaScript identifier`,
-      );
+      throw new Error(`Sandbox global name \`${name}\` is not a valid JavaScript identifier`);
     }
 
     if (typeof value === "function") {
@@ -198,27 +191,22 @@ class DenoSandboxExecutionHandle implements CodeExecutionRuntimeHandle {
       },
     });
 
-    this.sandbox.registerHandler(
-      "__ptc_call_tool",
-      async (toolName: unknown, args: unknown) => {
-        const normalizedToolName =
-          typeof toolName === "string" && toolName.length > 0
-            ? toolName
-            : String(toolName);
-        const normalizedArgs = cloneValue(normalizeObject(args));
-        const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.sandbox.registerHandler("__ptc_call_tool", async (toolName: unknown, args: unknown) => {
+      const normalizedToolName =
+        typeof toolName === "string" && toolName.length > 0 ? toolName : String(toolName);
+      const normalizedArgs = cloneValue(normalizeObject(args));
+      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        return await new Promise<unknown>((resolve) => {
-          this.pendingQueue.push({
-            toolCallId,
-            toolName: normalizedToolName,
-            args: normalizedArgs,
-            resolve,
-          });
-          this.drainNextPending();
+      return await new Promise<unknown>((resolve) => {
+        this.pendingQueue.push({
+          toolCallId,
+          toolName: normalizedToolName,
+          args: normalizedArgs,
+          resolve,
         });
-      },
-    );
+        this.drainNextPending();
+      });
+    });
 
     const wrappedSource = buildWrappedSource(
       params.source,
@@ -285,9 +273,7 @@ class DenoSandboxExecutionHandle implements CodeExecutionRuntimeHandle {
 
     if (winner === "timeout" && this.state === "running") {
       this.state = "error";
-      this.error = new Error(
-        `Code execution timed out after ${this.timeoutMs}ms`,
-      );
+      this.error = new Error(`Code execution timed out after ${this.timeoutMs}ms`);
       this.notifyStateChanged();
       throw this.error;
     }

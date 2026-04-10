@@ -41,10 +41,7 @@ function loadFileConfig(): FileConfig {
   try {
     return JSON.parse(readFileSync(configPath, "utf-8")) as FileConfig;
   } catch (error) {
-    console.warn(
-      `[acp2openai-cli] Failed to parse config file ${configPath}:`,
-      error,
-    );
+    console.warn(`[acp2openai-cli] Failed to parse config file ${configPath}:`, error);
     return {};
   }
 }
@@ -58,10 +55,7 @@ function parseArgList(raw: string): string[] {
     .filter(Boolean);
 }
 
-export function parseACPArgs(
-  raw: string | undefined,
-  fallback?: string[],
-): string[] {
+export function parseACPArgs(raw: string | undefined, fallback?: string[]): string[] {
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
@@ -74,27 +68,15 @@ export function parseACPArgs(
   return fallback ?? [];
 }
 
-export function resolveLaunchConfig(
-  overrides: LaunchOverrides = {},
-): LaunchConfig {
+export function resolveLaunchConfig(overrides: LaunchOverrides = {}): LaunchConfig {
   const file = loadFileConfig();
 
   return {
     host: overrides.host || process.env.HOST || file.host || "127.0.0.1",
     port: Number(overrides.port || process.env.PORT || file.port || 3456),
-    model:
-      overrides.model ||
-      process.env.ACP_MODEL ||
-      file.defaultModel ||
-      "default",
-    acpCommand:
-      overrides.acpCommand ||
-      process.env.ACP_COMMAND ||
-      file.acp?.command ||
-      "codebuddy",
-    acpArgs:
-      overrides.acpArgs ||
-      parseACPArgs(process.env.ACP_ARGS, file.acp?.args || ["--acp"]),
+    model: overrides.model || process.env.ACP_MODEL || file.defaultModel || "default",
+    acpCommand: overrides.acpCommand || process.env.ACP_COMMAND || file.acp?.command || "codebuddy",
+    acpArgs: overrides.acpArgs || parseACPArgs(process.env.ACP_ARGS, file.acp?.args || ["--acp"]),
     acpEnv: file.acp?.env,
     cwd: overrides.cwd || process.env.ACP_CWD || file.acp?.cwd || process.cwd(),
   };

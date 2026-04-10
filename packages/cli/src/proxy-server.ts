@@ -1,8 +1,4 @@
-import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
@@ -21,9 +17,7 @@ function jsonResponse(res: ServerResponse, statusCode: number, body: unknown) {
   res.end(payload);
 }
 
-async function readRequestBody(
-  req: IncomingMessage,
-): Promise<string | undefined> {
+async function readRequestBody(req: IncomingMessage): Promise<string | undefined> {
   if (req.method === "GET" || req.method === "HEAD") return undefined;
 
   const chunks: Buffer[] = [];
@@ -35,10 +29,7 @@ async function readRequestBody(
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-async function handleNodeResponse(
-  res: ServerResponse,
-  response: Response,
-): Promise<void> {
+async function handleNodeResponse(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
 
   response.headers.forEach((value, key) => {
@@ -50,15 +41,10 @@ async function handleNodeResponse(
     return;
   }
 
-  await pipeline(
-    Readable.fromWeb(response.body as WebReadableStream<Uint8Array>),
-    res,
-  );
+  await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), res);
 }
 
-export async function startProxyServer(
-  config: LaunchConfig,
-): Promise<RunningProxyServer> {
+export async function startProxyServer(config: LaunchConfig): Promise<RunningProxyServer> {
   const adapter = createACP2OpenAI({
     defaultModel: config.model,
     defaultACPConfig: {
@@ -111,14 +97,11 @@ export async function startProxyServer(
         }
       }
 
-      const request = new Request(
-        `http://${config.host}:${config.port}${req.url}`,
-        {
-          method: req.method,
-          headers,
-          body,
-        },
-      );
+      const request = new Request(`http://${config.host}:${config.port}${req.url}`, {
+        method: req.method,
+        headers,
+        body,
+      });
 
       const response = await adapter.handleRequest(request);
       await handleNodeResponse(res, response);
