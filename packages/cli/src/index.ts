@@ -71,61 +71,55 @@ function addSharedOptions(cmd: ReturnType<typeof cli.command>) {
 const cli = cac("aiyo");
 
 // serve
-addSharedOptions(cli.command("serve", "Start OpenAI-compatible proxy server (API mode)")).action(
-  async (opts: SharedOptions) => {
-    const config = buildConfig(opts);
-    const server = await startProxyServer(config);
-
-    console.error(`[aiyo] Listening at ${server.baseURL}`);
-    console.error(`[aiyo] model=${config.model}  provider=${config.provider}  ptc=${config.ptc}`);
-    console.error(
-      `[aiyo] endpoints: /health /v1/models /v1/chat/completions /v1/responses /v1/messages`,
-    );
-
-    await new Promise<void>((res) => {
-      process.once("SIGINT", res);
-      process.once("SIGTERM", res);
-    });
-
-    await server.close();
-  },
-);
-
-// launch opencode
-addSharedOptions(cli.command("launch opencode", "Start proxy + launch opencode IDE")).action(
-  async (opts: SharedOptions) => {
-    const config = buildConfig(opts);
-    const server = await startProxyServer(config);
-    console.error(`[aiyo] Proxy at ${server.baseURL}  model=${config.model}  ptc=${config.ptc}`);
-    try {
-      launchOpenCode({
-        baseURL: server.baseURL,
-        model: config.model,
-        cwd: config.cwd,
-        extraArgs: [],
-      });
-    } finally {
-      await server.close();
-    }
-  },
-);
-
-// launch claude
 addSharedOptions(
-  cli.command("launch claude", "Start proxy + launch Claude Code  (alias: claude-code)"),
+  cli.command("serve", "Start OpenAI-compatible proxy server (API mode)"),
 ).action(async (opts: SharedOptions) => {
   const config = buildConfig(opts);
   const server = await startProxyServer(config);
+
+  console.error(`[aiyo] Listening at ${server.baseURL}`);
+  console.error(`[aiyo] model=${config.model}  provider=${config.provider}  ptc=${config.ptc}`);
+  console.error(
+    `[aiyo] endpoints: /health /v1/models /v1/chat/completions /v1/responses /v1/messages`,
+  );
+
+  await new Promise<void>((res) => {
+    process.once("SIGINT", res);
+    process.once("SIGTERM", res);
+  });
+
+  await server.close();
+});
+
+// launch [integration]
+addSharedOptions(
+  cli
+    .command("launch <integration>", "Start proxy + launch an IDE integration")
+    .example("aiyo launch opencode")
+    .example("aiyo launch claude"),
+).action(async (integration: string, opts: SharedOptions) => {
+  const norm = integration === "claude-code" ? "claude" : integration;
+
+  if (norm !== "opencode" && norm !== "claude") {
+    console.error(
+      `[aiyo] Unknown integration: ${integration}. Supported: opencode, claude (alias: claude-code)`,
+    );
+    process.exit(1);
+  }
+
+  const config = buildConfig(opts);
+  const server = await startProxyServer(config);
+
   console.error(`[aiyo] Proxy at ${server.baseURL}  model=${config.model}  ptc=${config.ptc}`);
-    try {
-      launchClaudeCode({
-        baseURL: server.baseURL,
-        model: config.model,
-        cwd: config.cwd,
-        extraArgs: [],
-      });
-    } finally {
-      await server.close();
+
+  try {
+    if (norm === "opencode") {
+      await launchOpenCode({ baseURL: server.baseURL, model: config.model, cwd: config.cwd, extraArgs: [] });
+    } else {
+      await launchClaudeCode({ baseURL: server.baseURL, model: config.model, cwd: config.cwd, extraArgs: [] });
+    }
+  } finally {
+    await server.close();
   }
 });
 

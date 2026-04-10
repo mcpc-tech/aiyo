@@ -97,7 +97,7 @@ function updateConfig(configPath: string, baseURL: string, model: string) {
   writeJsonWithBackup(configPath, config);
 }
 
-export function launchOpenCode(options: OpenCodeLaunchOptions): void {
+export async function launchOpenCode(options: OpenCodeLaunchOptions): Promise<void> {
   const home = homedir();
   const configPath = join(home, ".config", "opencode", "opencode.json");
   const statePath = join(home, ".local", "state", "opencode", "model.json");
@@ -105,7 +105,7 @@ export function launchOpenCode(options: OpenCodeLaunchOptions): void {
   updateConfig(configPath, options.baseURL, options.model);
   updateRecentState(statePath, options.model);
 
-  runInteractiveCommand("opencode", options.extraArgs, {
+  await runInteractiveCommand("opencode", options.extraArgs, {
     cwd: options.cwd,
   });
 }
