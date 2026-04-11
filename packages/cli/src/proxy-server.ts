@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -37,14 +37,89 @@ async function readBody(req: IncomingMessage): Promise<string | undefined> {
   return chunks.length ? Buffer.concat(chunks).toString("utf-8") : undefined;
 }
 
-async function pipeResponse(res: ServerResponse, response: Response): Promise<void> {
+function logIncomingBody(url: string | undefined, body: string): void {
+  logger.info({ url, body }, "incoming request body");
+
+  try {
+    logger.info({ url, json: JSON.parse(body) }, "incoming request json");
+  } catch {
+    logger.info({ url }, "incoming request body is not valid json");
+  }
+}
+
+function logSSELine(line: string, state: { textLen: number; chunkCount: number }): void {
+  const normalized = line.endsWith("\r") ? line.slice(0, -1) : line;
+  if (!normalized) return;
+
+  logger.info({ line: normalized }, "SSE raw");
+
+  if (normalized === "data: [DONE]") {
+    logger.info({ textLen: state.textLen, chunks: state.chunkCount }, "SSE out: done");
+    return;
+  }
+
+  if (!normalized.startsWith("data: ")) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(normalized.slice(6));
+    const delta = parsed.choices?.[0]?.delta;
+    const finish = parsed.choices?.[0]?.finish_reason;
+
+    if (delta?.content) {
+      state.textLen += delta.content.length;
+      logger.info({ content: delta.content }, "SSE out: content");
+    }
+    if (delta?.tool_calls) {
+      logger.info({ tool_calls: delta.tool_calls }, "SSE out: tool_calls");
+    }
+    if (finish) {
+      logger.info(
+        { finish_reason: finish, textLen: state.textLen, chunks: state.chunkCount },
+        "SSE out: finish",
+      );
+    }
+    state.chunkCount += 1;
+  } catch {
+    logger.info({ data: normalized.slice(6) }, "SSE out: non-json data");
+  }
+}
+
+async function pipeResponse(res: ServerResponse, response: Response, isSSE = false): Promise<void> {
   res.statusCode = response.status;
   response.headers.forEach((v, k) => res.setHeader(k, v));
   if (!response.body) {
     res.end();
     return;
   }
-  await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), res);
+  const readable = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
+  if (isSSE) {
+    const state = { textLen: 0, chunkCount: 0 };
+    let buffered = "";
+    const logStream = new Transform({
+      transform(chunk, _enc, cb) {
+        const text = buffered + chunk.toString("utf-8");
+        const lines = text.split("\n");
+        buffered = lines.pop() ?? "";
+
+        for (const line of lines) {
+          logSSELine(line, state);
+        }
+
+        cb(null, chunk);
+      },
+      flush(cb) {
+        if (buffered) {
+          logSSELine(buffered, state);
+        }
+        cb();
+      },
+    });
+    await pipeline(readable, logStream, res);
+  } else {
+    await pipeline(readable, res);
+  }
 }
 
 // ─── Adapter factory ──────────────────────────────────────────────────────────
@@ -55,6 +130,7 @@ function buildAdapter(config: LaunchConfig) {
         createJavaScriptCodeExecutionPlugin({
           name: "ptc",
           toolNames: config.ptcToolNames ?? ["*"],
+          log: (obj, msg) => logger.info(obj, msg),
           mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
             logger.info({ source: result.source }, "[ptc] generated code");
             logger.info(
@@ -72,6 +148,10 @@ function buildAdapter(config: LaunchConfig) {
       ]
     : [];
 
+  const coreLog = (details: Record<string, unknown>, msg: string) => {
+    logger.info(details, `core: ${msg}`);
+  };
+
   if (config.provider === "acp") {
     logger.info(`Provider: acp  command: ${config.acpCommand} ${config.acpArgs.join(" ")}`);
     return createAiyoAcp({
@@ -83,6 +163,7 @@ function buildAdapter(config: LaunchConfig) {
         session: { cwd: config.cwd, mcpServers: [] },
       },
       plugins,
+      log: coreLog,
     });
   }
 
@@ -95,6 +176,7 @@ function buildAdapter(config: LaunchConfig) {
       modelName: modelId || config.model,
     }),
     plugins,
+    log: coreLog,
   });
 }
 
@@ -144,8 +226,19 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
       if (body && req.url?.includes("/chat/completions")) {
         try {
           const parsed = JSON.parse(body);
-          logger.debug({ messages: parsed.messages, tools: parsed.tools }, "incoming request");
+          const msgs = parsed.messages ?? [];
+          const summary = msgs.slice(-4).map((m: any) => {
+            const e: any = { role: m.role };
+            if (m.tool_calls) e.tc = m.tool_calls.length;
+            if (m.tool_call_id) e.tcid = m.tool_call_id;
+            return e;
+          });
+          logger.info(
+            { msgCount: msgs.length, toolCount: (parsed.tools ?? []).length, tail: summary },
+            "incoming request",
+          );
         } catch {}
+        logIncomingBody(req.url, body);
       }
       const headers = new Headers(
         Object.entries(req.headers).flatMap(([k, v]) =>
@@ -157,6 +250,7 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
         ),
       );
 
+      const startMs = Date.now();
       const response = await adapter.handleRequest(
         new Request(`http://${config.host}:${config.port}${req.url}`, {
           method: req.method,
@@ -164,9 +258,20 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
           body,
         }),
       );
+      logger.info({ status: response.status, elapsed: Date.now() - startMs }, "upstream response");
 
-      await pipeResponse(res, response);
+      const isStream = body
+        ? (() => {
+            try {
+              return JSON.parse(body).stream === true;
+            } catch {
+              return false;
+            }
+          })()
+        : false;
+      await pipeResponse(res, response, isStream);
     } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "request error");
       if (res.headersSent) {
         res.destroy(err instanceof Error ? err : new Error(String(err)));
         return;

@@ -1104,7 +1104,7 @@ describe("AiyoAdapter (high-value unit tests)", () => {
                 type: "tool-call",
                 toolCallId: "wrapper_1",
                 toolName: "tool_router",
-                args: { city: "SF" },
+                input: { city: "SF" },
               }),
             ]),
           }),
@@ -1136,6 +1136,84 @@ describe("AiyoAdapter (high-value unit tests)", () => {
         throw new Error("Expected function tool call");
       }
     });
+  });
+
+  it("skips plugin middleware and result handlers for nested runModel calls when requested", async () => {
+    const { generateText } = await import("ai");
+    const configuredPhases: string[] = [];
+    const pluginPhases: string[] = [];
+    let pluginResultHandlerCalls = 0;
+
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: "outer intermediate",
+        finishReason: "stop",
+        usage: { inputTokens: 2, outputTokens: 2, totalTokens: 4 },
+        toolCalls: [],
+      } as any)
+      .mockResolvedValueOnce({
+        text: "inner final",
+        finishReason: "stop",
+        usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+        toolCalls: [],
+      } as any);
+
+    const labelRequest = (request: OpenAIChatCompletionRequest): string => {
+      const firstMessage = request.messages[0];
+      return typeof firstMessage?.content === "string" ? firstMessage.content : "";
+    };
+
+    const adapterWithNestedRunModel = new AiyoAdapter({
+      defaultModel: "default",
+      runtimeFactory: ({ request }) => ({
+        model: "mocked-model",
+        modelName: request.model ?? "default",
+      }),
+      middleware: (ctx) => {
+        configuredPhases.push(`${ctx.phase}:${labelRequest(ctx.request)}`);
+      },
+      plugins: [
+        {
+          middleware: (ctx) => {
+            pluginPhases.push(`${ctx.phase}:${labelRequest(ctx.request)}`);
+          },
+          onResult: async (ctx) => {
+            pluginResultHandlerCalls += 1;
+            if (labelRequest(ctx.request) !== "outer prompt") return;
+
+            ctx.overrideResult = await ctx.runModel(
+              {
+                ...ctx.request,
+                messages: [{ role: "user", content: "inner prompt" }],
+              },
+              { skipPlugins: true },
+            );
+          },
+        },
+      ],
+    });
+
+    const res = await adapterWithNestedRunModel.handleChatCompletion({
+      model: "default",
+      messages: [{ role: "user", content: "outer prompt" }],
+    });
+
+    expect(res.choices[0].message.content).toBe("inner final");
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(pluginResultHandlerCalls).toBe(1);
+    expect(pluginPhases).toEqual(
+      expect.arrayContaining(["request:outer prompt", "params:outer prompt"]),
+    );
+    expect(pluginPhases.some((phase) => phase.endsWith(":inner prompt"))).toBe(false);
+    expect(configuredPhases).toEqual(
+      expect.arrayContaining([
+        "request:outer prompt",
+        "params:outer prompt",
+        "request:inner prompt",
+        "params:inner prompt",
+      ]),
+    );
+    expect(configuredPhases.some((phase) => phase.endsWith(":inner prompt"))).toBe(true);
   });
 
   describe("JavaScript code execution plugin", () => {
@@ -1267,7 +1345,94 @@ describe("AiyoAdapter (high-value unit tests)", () => {
 
       expect(prompt).toContain("<output_schema>");
       expect(prompt).toContain('"unix_timestamp"');
+      expect(prompt).toContain("The ONLY top-level tool you may call is `code_execution`");
+      expect(prompt).toContain("Never emit a direct top-level tool call");
       expect(prompt).toContain("Do not guess alternate result field names");
+    });
+
+    it("surfaces an invalid top-level tool call to the final user instead of returning an empty stop", async () => {
+      const { generateText } = await import("ai");
+
+      vi.mocked(generateText).mockResolvedValueOnce({
+        text: null,
+        finishReason: "tool-calls",
+        usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
+        toolCalls: [
+          {
+            toolCallId: "bad_call_1",
+            toolName: "bash",
+            input: { command: "ls" },
+            invalid: true,
+            error: {
+              name: "AI_NoSuchToolError",
+              toolName: "bash",
+              availableTools: ["code_execution"],
+            },
+          },
+        ],
+      } as any);
+
+      const adapterWithPlugin = createCodeExecutionAdapter(["read_file"]);
+      const response = await adapterWithPlugin.handleChatCompletion(
+        createExecutionRequest("inspect the project"),
+      );
+
+      expect(response.choices[0].finish_reason).toBe("stop");
+      expect(response.choices[0].message.tool_calls).toBeUndefined();
+      expect(response.choices[0].message.content).toContain("unavailable tool `bash`");
+      expect(response.choices[0].message.content).toContain("`code_execution`");
+    });
+
+    it("streams an invalid top-level tool call as user-visible error text", async () => {
+      const { streamText } = await import("ai");
+
+      const streamedToolCalls = Promise.resolve([
+        {
+          toolCallId: "bad_stream_call_1",
+          toolName: "bash",
+          input: { command: "ls" },
+          invalid: true,
+          error: {
+            name: "AI_NoSuchToolError",
+            toolName: "bash",
+            availableTools: ["code_execution"],
+          },
+        },
+      ]);
+
+      vi.mocked(streamText).mockReturnValueOnce({
+        textStream: (async function* () {})(),
+        toolCalls: streamedToolCalls,
+        finishReason: Promise.resolve("tool-calls"),
+        usage: Promise.resolve({ inputTokens: 4, outputTokens: 2, totalTokens: 6 }),
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({
+            text: null,
+            toolCalls: streamedToolCalls,
+            finishReason: Promise.resolve("tool-calls"),
+            usage: Promise.resolve({ inputTokens: 4, outputTokens: 2, totalTokens: 6 }),
+          }).then(resolve),
+      } as any);
+
+      const adapterWithPlugin = createCodeExecutionAdapter(["read_file"]);
+      const chunks: string[] = [];
+      for await (const chunk of adapterWithPlugin.handleChatCompletionStream({
+        ...createExecutionRequest("inspect the project"),
+        stream: true,
+      })) {
+        chunks.push(chunk);
+      }
+
+      const contentChunks = chunks
+        .filter((chunk) => chunk.startsWith("data: {"))
+        .map((chunk) => JSON.parse(chunk.replace("data: ", "")))
+        .map((parsed) => parsed.choices?.[0]?.delta?.content)
+        .filter(Boolean);
+
+      expect(contentChunks.join("")).toContain("unavailable tool `bash`");
+      expect(contentChunks.join("")).toContain("`code_execution`");
+      const finalChunk = JSON.parse(chunks[chunks.length - 2].replace("data: ", ""));
+      expect(finalChunk.choices[0].finish_reason).toBe("stop");
     });
 
     it("suspends on the first sandbox tool call and exposes the bridge tool call", async () => {
@@ -1636,7 +1801,7 @@ describe("AiyoAdapter (high-value unit tests)", () => {
                 type: "tool-call",
                 toolCallId: "call_weather_1",
                 toolName: "lookup_weather",
-                args: { city: "Paris" },
+                input: { city: "Paris" },
               }),
             ]),
           }),

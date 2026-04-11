@@ -476,7 +476,10 @@ Call \`${codeExecutionToolName}\` with a \`code\` field containing your JavaScri
 </overview>
 
 <instructions>
-- Call tools with \`await tools.<name>(args)\`. Always await.
+- The ONLY top-level tool you may call is \`${codeExecutionToolName}\`.
+- Never emit a direct top-level tool call such as \`bash\`, \`read_file\`, or \`list_dir\`.
+- To use a real tool, call \`${codeExecutionToolName}\` first and put JavaScript in its \`code\` field.
+- Inside that JavaScript, call tools with \`await tools.<name>(args)\`. Always await.
 - Use \`return <value>\` to produce a final structured result.
 - Use \`console.log()\` for debug output (captured, not returned to user).
 - You may use loops, conditionals, variables, try/catch.

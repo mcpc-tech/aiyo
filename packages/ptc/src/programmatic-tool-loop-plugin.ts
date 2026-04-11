@@ -107,6 +107,8 @@ export interface CodeExecutionSession {
 
 export interface JavaScriptCodeExecutionPluginConfig {
   name?: string;
+  /** Optional debug logger. Called with (obj, msg) like pino. */
+  log?: (obj: Record<string, unknown>, msg: string) => void;
   /** Tool name that the model calls with JS code inside. Default: matches any. */
   match?: (
     toolCall: ProgrammaticToolLoopToolCall,
@@ -476,7 +478,10 @@ Call \`${codeExecutionToolName}\` with a \`code\` field containing your JavaScri
 </overview>
 
 <instructions>
-- Call tools with \`await tools.<name>(args)\`. Always await.
+- The ONLY top-level tool you may call is \`${codeExecutionToolName}\`.
+- Never emit a direct top-level tool call such as \`bash\`, \`read_file\`, or \`list_dir\`.
+- To use a real tool, call \`${codeExecutionToolName}\` first and put JavaScript in its \`code\` field.
+- Inside that JavaScript, call tools with \`await tools.<name>(args)\`. Always await.
 - Use \`return <value>\` to produce a final structured result.
 - Use \`console.log()\` for debug output (captured, not returned to user).
 - You may use loops, conditionals, variables, try/catch.
@@ -554,6 +559,18 @@ export function createJavaScriptCodeExecutionPlugin(
   const timeoutMs = Math.max(1, config.timeoutMs ?? 30_000);
   const codeToolName = config.codeExecutionToolName ?? "code_execution";
   const shouldRewrite = config.rewriteRequest !== false;
+  const debug = config.log ?? (() => {});
+
+  function debugModelResult(result: AiyoFinalResult, msg: string): void {
+    debug(
+      {
+        finishReason: result.finishReason,
+        textLen: typeof result.text === "string" ? result.text.length : 0,
+        toolCallCount: result.toolCalls?.length ?? 0,
+      },
+      msg,
+    );
+  }
 
   // In-memory session store. Key = executionId.
   const sessions = new Map<string, CodeExecutionSession>();
@@ -578,6 +595,11 @@ export function createJavaScriptCodeExecutionPlugin(
     );
 
     if (relevantTools.length === 0) return;
+
+    debug(
+      { originalCount: originalTools.length, relevantCount: relevantTools.length },
+      "ptc rewrite",
+    );
 
     // 1. Generate the system prompt
     const systemPrompt = buildCodeExecutionSystemPrompt(relevantTools, codeToolName);
@@ -688,6 +710,8 @@ export function createJavaScriptCodeExecutionPlugin(
       const session = findSessionByPendingToolCall(toolCallId);
       if (!session) continue;
 
+      debug({ toolCallId, executionId: session.executionId }, "ptc resume");
+
       const content = msg.content;
       let parsed: unknown;
       if (typeof content === "string") {
@@ -733,6 +757,10 @@ export function createJavaScriptCodeExecutionPlugin(
 
         const handle = session.handle;
         await handle.waitForSuspendOrComplete();
+        debug(
+          { state: handle.state, hasPending: !!handle.pendingToolCall },
+          "ptc resume: after wait",
+        );
 
         if (handle.state === "waiting_for_tool_result" && handle.pendingToolCall) {
           const pending = handle.pendingToolCall;
@@ -788,6 +816,7 @@ export function createJavaScriptCodeExecutionPlugin(
           const modelResult = await ctx.runModel(nextRequest, {
             skipPlugins: true,
           });
+          debugModelResult(modelResult, "ptc resume: model result");
           ctx.overrideResult = modelResult;
           return;
         }
@@ -806,7 +835,9 @@ export function createJavaScriptCodeExecutionPlugin(
         .map((tc) => normalizeToolCall(tc))
         .filter((tc): tc is ProgrammaticToolLoopToolCall => Boolean(tc));
 
-      if (toolCalls.length === 0) return;
+      if (toolCalls.length === 0) {
+        return;
+      }
 
       // Find the first tool call that matches the code execution pattern.
       const codeToolCall = toolCalls.find((tc) =>
@@ -821,6 +852,8 @@ export function createJavaScriptCodeExecutionPlugin(
       const source = getCode(codeToolCall);
       if (!source) return;
 
+      debug({ toolName: codeToolCall.toolName, codeLen: source.length }, "ptc start: executing");
+
       const executionId = generateId();
       const session = await startSession(executionId, source, codeToolCall.input);
       session.executionToolCallId = codeToolCall.toolCallId;
@@ -829,6 +862,7 @@ export function createJavaScriptCodeExecutionPlugin(
 
       const handle = session.handle;
       await handle.waitForSuspendOrComplete();
+      debug({ state: handle.state, hasPending: !!handle.pendingToolCall }, "ptc start: after wait");
 
       if (handle.state === "waiting_for_tool_result" && handle.pendingToolCall) {
         const pending = handle.pendingToolCall;
@@ -879,6 +913,7 @@ export function createJavaScriptCodeExecutionPlugin(
         const modelResult = await ctx.runModel(nextRequest, {
           skipPlugins: true,
         });
+        debugModelResult(modelResult, "ptc start: model result");
         ctx.overrideResult = modelResult;
         sessions.delete(executionId);
         handle.dispose();

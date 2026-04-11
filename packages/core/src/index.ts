@@ -118,6 +118,7 @@ type PreparedChatInvocation = {
   runtime: RuntimeContext;
   params: AiyoModelCallParams;
   toolSelection: ToolSelectionContext;
+  skipPlugins: boolean;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,35 +132,88 @@ export class AiyoAdapter {
     this.config = config;
   }
 
+  private debug(details: Record<string, unknown>, msg: string): void {
+    this.config.log?.(details, msg);
+  }
+
+  private logPreparedInvocation(invocation: PreparedChatInvocation, msg: string): void {
+    this.debug(
+      {
+        endpoint: invocation.endpoint,
+        callType: invocation.callType,
+        modelName: invocation.runtime.modelName,
+        skipPlugins: invocation.skipPlugins,
+        request: {
+          model: invocation.request.model,
+          stream: invocation.request.stream === true,
+          messageCount: invocation.request.messages?.length ?? 0,
+          toolCount: invocation.request.tools?.length ?? 0,
+          toolChoice: invocation.request.tool_choice ?? "auto",
+        },
+        params: {
+          messageCount: invocation.params.messages?.length ?? 0,
+          toolNames: Object.keys(invocation.params.tools ?? {}),
+          toolChoice: invocation.params.toolChoice,
+          maxOutputTokens: invocation.params.maxOutputTokens,
+          temperature: invocation.params.temperature,
+        },
+      },
+      msg,
+    );
+  }
+
+  private logFinalResult(result: AiyoFinalResult, msg: string): void {
+    this.debug(
+      {
+        text: result.text ?? null,
+        toolCalls: result.toolCalls ?? [],
+        finishReason: result.finishReason,
+        usage: result.usage,
+      },
+      msg,
+    );
+  }
+
+  private logOpenAIStreamChunk(chunk: OpenAIStreamChunk, msg: string): void {
+    this.debug({ chunk }, msg);
+  }
+
   private getPlugins(): AiyoPlugin[] {
     if (!this.config.plugins) return [];
     return Array.isArray(this.config.plugins) ? this.config.plugins : [this.config.plugins];
   }
 
-  private getMiddlewares(): AiyoMiddleware[] {
-    const configured = !this.config.middleware
+  private getConfiguredMiddlewares(): AiyoMiddleware[] {
+    return !this.config.middleware
       ? []
       : Array.isArray(this.config.middleware)
         ? this.config.middleware
         : [this.config.middleware];
+  }
 
-    const fromPlugins = this.getPlugins().flatMap((plugin) => {
+  private getPluginMiddlewares(): AiyoMiddleware[] {
+    return this.getPlugins().flatMap((plugin) => {
       if (!plugin.middleware) return [];
       return Array.isArray(plugin.middleware) ? plugin.middleware : [plugin.middleware];
     });
-
-    return [...configured, ...fromPlugins];
   }
 
-  private getResultHandlers(): AiyoResultHandler[] {
+  private getMiddlewares(skipPlugins = false): AiyoMiddleware[] {
+    const configured = this.getConfiguredMiddlewares();
+    if (skipPlugins) return configured;
+    return [...configured, ...this.getPluginMiddlewares()];
+  }
+
+  private getResultHandlers(skipPlugins = false): AiyoResultHandler[] {
+    if (skipPlugins) return [];
     return this.getPlugins().flatMap((plugin) => {
       if (!plugin.onResult) return [];
       return Array.isArray(plugin.onResult) ? plugin.onResult : [plugin.onResult];
     });
   }
 
-  private hasResultHandlers(): boolean {
-    return this.getResultHandlers().length > 0;
+  private hasResultHandlers(skipPlugins = false): boolean {
+    return this.getResultHandlers(skipPlugins).length > 0;
   }
 
   private cloneRequest<T>(value: T): T {
@@ -170,8 +224,11 @@ export class AiyoAdapter {
     return JSON.parse(JSON.stringify(value)) as T;
   }
 
-  private async runMiddleware(context: AiyoMiddlewareContext): Promise<void> {
-    for (const middleware of this.getMiddlewares()) {
+  private async runMiddleware(
+    context: AiyoMiddlewareContext,
+    options?: { skipPlugins?: boolean },
+  ): Promise<void> {
+    for (const middleware of this.getMiddlewares(options?.skipPlugins ?? false)) {
       await middleware(context);
     }
   }
@@ -262,6 +319,7 @@ ${toolList}
     callType,
     originalRequest,
     request,
+    skipPlugins = false,
   }: {
     endpoint: AiyoEndpoint;
     callType: AiyoCallType;
@@ -270,33 +328,40 @@ ${toolList}
       | OpenAIResponsesRequest
       | AnthropicMessagesRequest;
     request: OpenAIChatCompletionRequest;
+    skipPlugins?: boolean;
   }): Promise<PreparedChatInvocation> {
     const mutableRequest = this.cloneRequest(request);
     const stream = callType === "streamText";
 
-    await this.runMiddleware({
-      phase: "request",
-      endpoint,
-      callType,
-      stream,
-      originalRequest,
-      request: mutableRequest,
-    });
+    await this.runMiddleware(
+      {
+        phase: "request",
+        endpoint,
+        callType,
+        stream,
+        originalRequest,
+        request: mutableRequest,
+      },
+      { skipPlugins },
+    );
 
     this.injectRequestToolPriorityPrompt(mutableRequest);
 
     const runtime = await this.buildRuntime(mutableRequest, endpoint, callType);
     const params = this.buildModelCallParams(mutableRequest, runtime);
 
-    await this.runMiddleware({
-      phase: "params",
-      endpoint,
-      callType,
-      stream,
-      originalRequest,
-      request: mutableRequest,
-      params,
-    });
+    await this.runMiddleware(
+      {
+        phase: "params",
+        endpoint,
+        callType,
+        stream,
+        originalRequest,
+        request: mutableRequest,
+        params,
+      },
+      { skipPlugins },
+    );
 
     return {
       endpoint,
@@ -306,6 +371,7 @@ ${toolList}
       runtime,
       params,
       toolSelection: this.buildToolSelectionFromParams(params),
+      skipPlugins,
     };
   }
 
@@ -315,16 +381,29 @@ ${toolList}
   ): Promise<AiyoResultMutation> {
     const mutableResult = this.cloneRequest(result);
 
-    await this.runMiddleware({
-      phase: "result",
-      endpoint: invocation.endpoint,
-      callType: invocation.callType,
-      stream: true,
-      originalRequest: invocation.originalRequest,
-      request: invocation.request,
-      params: invocation.params,
-      result: mutableResult,
-    });
+    await this.runMiddleware(
+      {
+        phase: "result",
+        endpoint: invocation.endpoint,
+        callType: invocation.callType,
+        stream: true,
+        originalRequest: invocation.originalRequest,
+        request: invocation.request,
+        params: invocation.params,
+        result: mutableResult,
+      },
+      { skipPlugins: invocation.skipPlugins },
+    );
+
+    this.debug(
+      {
+        endpoint: invocation.endpoint,
+        callType: invocation.callType,
+        skipPlugins: invocation.skipPlugins,
+        event: mutableResult,
+      },
+      "core stream mutation output",
+    );
 
     return mutableResult;
   }
@@ -334,15 +413,30 @@ ${toolList}
     request: OpenAIChatCompletionRequest,
     options?: AiyoRunModelOptions,
   ): Promise<AiyoFinalResult> {
+    this.debug(
+      {
+        endpoint: invocation.endpoint,
+        parentCallType: invocation.callType,
+        nestedCallType: options?.callType ?? "streamText",
+        skipPlugins: options?.skipPlugins ?? false,
+        model: request.model,
+        messageCount: request.messages?.length ?? 0,
+        toolCount: request.tools?.length ?? 0,
+      },
+      "core nested runModel start",
+    );
+
     const nestedInvocation = await this.prepareChatInvocation({
       endpoint: invocation.endpoint,
       callType: options?.callType ?? "streamText",
       originalRequest: request,
       request,
+      skipPlugins: options?.skipPlugins ?? false,
     });
 
     // Always use streamText path so tools are forwarded correctly
     const { result } = await this.collectPreparedStreamResult(nestedInvocation);
+    this.logFinalResult(result, "core nested runModel final result");
     return result;
   }
 
@@ -350,7 +444,7 @@ ${toolList}
     invocation: PreparedChatInvocation,
     result: AiyoFinalResult,
   ): Promise<{ result: AiyoFinalResult; overridden: boolean }> {
-    if (!this.hasResultHandlers()) {
+    if (!this.hasResultHandlers(invocation.skipPlugins)) {
       return {
         result: this.cloneRequest(result),
         overridden: false,
@@ -360,7 +454,7 @@ ${toolList}
     let mutableResult = this.cloneRequest(result);
     let overridden = false;
 
-    for (const handler of this.getResultHandlers()) {
+    for (const handler of this.getResultHandlers(invocation.skipPlugins)) {
       const context: AiyoResultHandlerContext = {
         endpoint: invocation.endpoint,
         callType: invocation.callType,
@@ -399,10 +493,15 @@ ${toolList}
   ): Promise<AiyoFinalResult> {
     try {
       const result = await generateText(invocation.params);
+      const selectedToolCalls = this.pickToolCalls(result.toolCalls, invocation.toolSelection);
+      const fallbackText =
+        !result.text && (!selectedToolCalls || selectedToolCalls.length === 0)
+          ? this.buildRejectedToolCallMessage(result.toolCalls, invocation.toolSelection)
+          : undefined;
       let finalResult: AiyoFinalResult = {
-        text: result.text ?? null,
-        toolCalls: this.pickToolCalls(result.toolCalls, invocation.toolSelection),
-        finishReason: result.finishReason,
+        text: result.text ?? fallbackText ?? null,
+        toolCalls: selectedToolCalls,
+        finishReason: fallbackText ? "stop" : result.finishReason,
         usage: {
           inputTokens: result.usage?.inputTokens ?? 0,
           outputTokens: result.usage?.outputTokens ?? 0,
@@ -712,22 +811,28 @@ ${toolList}
   ): OpenAIToolCall[] {
     if (!incoming || incoming.length === 0) return existing;
 
-    const map = new Map(existing.map((call) => [call.id, call]));
+    const result = [...existing];
 
     for (const item of incoming) {
-      if (!item.id || item.type !== "function" || !item.function) continue;
-
-      map.set(item.id, {
-        id: item.id,
-        type: "function",
-        function: {
-          name: item.function.name ?? "",
-          arguments: item.function.arguments ?? "{}",
-        },
-      });
+      if (!item.function) continue;
+      const idx = item.index ?? 0;
+      if (!result[idx]) {
+        result[idx] = {
+          id: item.id ?? `call_${idx}`,
+          type: "function",
+          function: {
+            name: item.function.name ?? "",
+            arguments: item.function.arguments ?? "",
+          },
+        };
+      } else {
+        if (item.id) result[idx].id = item.id;
+        if (item.function.name) result[idx].function.name = item.function.name;
+        if (item.function.arguments) result[idx].function.arguments += item.function.arguments;
+      }
     }
 
-    return Array.from(map.values());
+    return result;
   }
 
   private mergeTools(
@@ -736,8 +841,8 @@ ${toolList}
   ): Record<string, any> | undefined {
     if (!providerTools && !requestTools) return undefined;
     return {
-      ...(providerTools ?? {}),
-      ...(requestTools ?? {}),
+      ...providerTools,
+      ...requestTools,
     };
   }
 
@@ -938,7 +1043,7 @@ ${toolList}
               type: "tool-call" as const,
               toolCallId: fallbackToolCallId,
               toolName: tc.function.name,
-              args: parsedArgs,
+              input: parsedArgs,
             };
           }),
       ],
@@ -1068,18 +1173,19 @@ ${toolList}
   private sanitizeToolCalls(
     toolCalls: any[] | undefined,
     toolSelection: ToolSelectionContext,
-  ): any[] | undefined {
+  ): RawToolCall[] | undefined {
     if (!toolCalls || toolCalls.length === 0) return undefined;
 
     const normalized = toolCalls
       .map((tc) => this.normalizeToolCall(tc))
-      .filter((tc): tc is any => Boolean(tc));
+      .filter((tc): tc is RawToolCall => Boolean(tc));
 
     const filtered = normalized.filter((tc) => {
       const name = String(tc?.toolName ?? "");
       if (!name) return false;
-      if (toolSelection.allowedToolNames.size > 0 && !toolSelection.allowedToolNames.has(name))
+      if (toolSelection.allowedToolNames.size > 0 && !toolSelection.allowedToolNames.has(name)) {
         return false;
+      }
       if (toolSelection.forcedToolName && name !== toolSelection.forcedToolName) return false;
       return true;
     });
@@ -1087,10 +1193,60 @@ ${toolList}
     return filtered.length > 0 ? filtered : undefined;
   }
 
+  private getRejectedToolCalls(
+    toolCalls: any[] | undefined,
+    toolSelection: ToolSelectionContext,
+  ): RawToolCall[] {
+    if (!toolCalls || toolCalls.length === 0) return [];
+
+    return toolCalls
+      .map((tc) => this.normalizeToolCall(tc))
+      .filter((tc): tc is RawToolCall => Boolean(tc))
+      .filter((tc) => {
+        const name = String(tc?.toolName ?? "");
+        if (!name) return true;
+        if (toolSelection.allowedToolNames.size > 0 && !toolSelection.allowedToolNames.has(name)) {
+          return true;
+        }
+        if (toolSelection.forcedToolName && name !== toolSelection.forcedToolName) return true;
+        return false;
+      });
+  }
+
+  private buildRejectedToolCallMessage(
+    toolCalls: any[] | undefined,
+    toolSelection: ToolSelectionContext,
+  ): string | undefined {
+    const rejected = this.getRejectedToolCalls(toolCalls, toolSelection);
+    if (rejected.length === 0) return undefined;
+
+    const first = rejected[0];
+    const requestedTool =
+      typeof first.toolName === "string" && first.toolName ? first.toolName : "unknown";
+    const error = this.isRecord(first.error) ? first.error : undefined;
+    const availableFromError = Array.isArray(error?.availableTools)
+      ? error.availableTools.filter((toolName): toolName is string => typeof toolName === "string")
+      : [];
+    const allowedTools =
+      availableFromError.length > 0
+        ? availableFromError
+        : Array.from(toolSelection.allowedToolNames).filter(Boolean);
+    const onlyAllowedTool = toolSelection.forcedToolName ?? allowedTools[0];
+    const allowedText =
+      allowedTools.length > 0
+        ? ` Available top-level tools: ${allowedTools.map((toolName) => `\`${toolName}\``).join(", ")}.`
+        : "";
+    const guidance = onlyAllowedTool
+      ? ` Call \`${onlyAllowedTool}\` as the top-level tool instead, then invoke other tools inside its code.`
+      : " Retry with one of the declared tools instead of an unavailable top-level tool call.";
+
+    return `The model attempted to call unavailable tool \`${requestedTool}\`, so the tool call could not be executed.${allowedText}${guidance}`;
+  }
+
   private coerceForcedToolCall(
     rawToolCalls: any[] | undefined,
     toolSelection: ToolSelectionContext,
-  ): any[] | undefined {
+  ): RawToolCall[] | undefined {
     if (!toolSelection.forcedToolName) return undefined;
     if (!rawToolCalls || rawToolCalls.length === 0) return undefined;
 
@@ -1108,7 +1264,7 @@ ${toolList}
   private pickToolCalls(
     rawToolCalls: any[] | undefined,
     toolSelection: ToolSelectionContext,
-  ): any[] | undefined {
+  ): RawToolCall[] | undefined {
     return (
       this.sanitizeToolCalls(rawToolCalls, toolSelection) ??
       this.coerceForcedToolCall(rawToolCalls, toolSelection)
@@ -1235,49 +1391,74 @@ ${toolList}
     textDeltas: string[];
     overridden: boolean;
   }> {
+    this.logPreparedInvocation(invocation, "core collect stream start");
     const result = streamText(invocation.params);
 
     try {
       const textDeltas: string[] = [];
 
       for await (const chunk of result.textStream) {
+        this.debug({ textDelta: chunk }, "core streamText raw text delta");
         const mutated = await this.mutateStreamResult(invocation, {
           eventType: "text-delta",
           textDelta: chunk,
         });
         const textDelta = mutated.textDelta ?? "";
+        this.debug({ textDelta }, "core streamText final text delta");
         if (textDelta.length === 0) continue;
         textDeltas.push(textDelta);
       }
 
       const awaited = result;
       const rawToolCalls = await this.resolveMaybePromise(awaited.toolCalls);
+      this.debug({ toolCalls: rawToolCalls ?? [] }, "core streamText raw tool calls");
       let selectedToolCalls = this.pickToolCalls(rawToolCalls, invocation.toolSelection);
+      this.debug({ toolCalls: selectedToolCalls ?? [] }, "core streamText selected tool calls");
       const mutatedToolCalls = await this.mutateStreamResult(invocation, {
         eventType: "tool-calls",
         toolCalls: selectedToolCalls,
       });
       selectedToolCalls = mutatedToolCalls.toolCalls;
+      this.debug({ toolCalls: selectedToolCalls ?? [] }, "core streamText final tool calls");
+
+      const joinedText = textDeltas.length > 0 ? textDeltas.join("") : null;
+      const fallbackText =
+        !joinedText && (!selectedToolCalls || selectedToolCalls.length === 0)
+          ? this.buildRejectedToolCallMessage(rawToolCalls, invocation.toolSelection)
+          : undefined;
+      const finalText = joinedText ?? fallbackText ?? null;
+      const emittedTextDeltas = fallbackText ? [fallbackText] : textDeltas;
 
       const finishReasonValue = await this.resolveMaybePromise(awaited.finishReason);
+      this.debug({ finishReason: finishReasonValue }, "core streamText raw finish reason");
       const mutatedFinish = await this.mutateStreamResult(invocation, {
         eventType: "finish",
-        finishReason: finishReasonValue,
+        finishReason: fallbackText ? "stop" : finishReasonValue,
       });
       const usage = await this.resolveMaybePromise((awaited as { usage?: any }).usage);
+      this.debug(
+        {
+          finishReason: mutatedFinish.finishReason,
+          usage,
+        },
+        "core streamText final finish reason",
+      );
+
+      const handled = await this.applyResultHandlers(invocation, {
+        text: finalText,
+        toolCalls: selectedToolCalls,
+        finishReason: mutatedFinish.finishReason,
+        usage: {
+          inputTokens: usage?.inputTokens ?? 0,
+          outputTokens: usage?.outputTokens ?? 0,
+          totalTokens: usage?.totalTokens ?? 0,
+        },
+      });
+      this.logFinalResult(handled.result, "core collect stream final result");
 
       return {
-        textDeltas,
-        ...(await this.applyResultHandlers(invocation, {
-          text: textDeltas.length > 0 ? textDeltas.join("") : null,
-          toolCalls: selectedToolCalls,
-          finishReason: mutatedFinish.finishReason,
-          usage: {
-            inputTokens: usage?.inputTokens ?? 0,
-            outputTokens: usage?.outputTokens ?? 0,
-            totalTokens: usage?.totalTokens ?? 0,
-          },
-        })),
+        textDeltas: emittedTextDeltas,
+        ...handled,
       };
     } catch (err: any) {
       // If the model produced no output (e.g. during a PTC resume with dummy
@@ -1334,6 +1515,7 @@ ${toolList}
         ],
       };
       isFirst = false;
+      this.logOpenAIStreamChunk(streamChunk, "core openai stream out text");
       yield `data: ${JSON.stringify(streamChunk)}\n\n`;
     }
 
@@ -1365,6 +1547,7 @@ ${toolList}
             },
           ],
         };
+        this.logOpenAIStreamChunk(toolCallChunk, "core openai stream out tool call");
         yield `data: ${JSON.stringify(toolCallChunk)}\n\n`;
       }
     }
@@ -1390,7 +1573,7 @@ ${toolList}
   private async *runPreparedChatCompletionStream(
     invocation: PreparedChatInvocation,
   ): AsyncIterable<string> {
-    if (this.hasResultHandlers()) {
+    if (this.hasResultHandlers(invocation.skipPlugins)) {
       const buffered = await this.collectPreparedStreamResult(invocation);
       yield* this.streamOpenAIFromFinalResult(
         invocation,
@@ -1430,6 +1613,7 @@ ${toolList}
           ],
         };
         isFirst = false;
+        this.logOpenAIStreamChunk(streamChunk, "core openai stream passthrough text");
         yield `data: ${JSON.stringify(streamChunk)}\n\n`;
       }
 
@@ -1497,7 +1681,9 @@ ${toolList}
         ],
       };
 
+      this.logOpenAIStreamChunk(finalChunk, "core openai stream passthrough finish");
       yield `data: ${JSON.stringify(finalChunk)}\n\n`;
+      this.debug({}, "core openai stream passthrough done");
       yield "data: [DONE]\n\n";
     } finally {
       await this.cleanupRuntime(invocation.runtime);
@@ -1771,7 +1957,7 @@ ${toolList}
     });
     const modelName = invocation.runtime.modelName || chatReq.model || "default";
 
-    if (this.hasResultHandlers()) {
+    if (this.hasResultHandlers(invocation.skipPlugins)) {
       const buffered = await this.collectPreparedStreamResult(invocation);
       yield* this.streamAnthropicFromFinalResult(
         modelName,

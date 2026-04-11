@@ -88,6 +88,7 @@ export type ACP2ToolTransformer = (
 export type ACP2ToolCallNormalizer = (toolCall: RawToolCall) => RawToolCall | undefined;
 
 export type ACP2ListModelsResolver = (() => string[] | Promise<string[]>) | string[];
+export type AiyoLogFn = (details: Record<string, unknown>, msg: string) => void;
 
 export type AiyoResultEventType = "text-delta" | "tool-calls" | "finish";
 
@@ -403,4 +404,5 @@ export interface AiyoConfig {
   listModels?: ACP2ListModelsResolver;
   transformTools?: ACP2ToolTransformer;
   normalizeToolCall?: ACP2ToolCallNormalizer;
+  log?: AiyoLogFn;
 }
