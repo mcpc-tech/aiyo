@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo",
-  "version": "0.0.1-beta.2",
+  "version": "0.0.1-beta.3",
   "description": "Provider-agnostic OpenAI/Anthropic-compatible adapter built on the AI SDK, with optional ACP and PTC integration packages.",
   "license": "Apache-2.0",
   "author": "",

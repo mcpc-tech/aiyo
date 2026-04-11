@@ -123,6 +123,6 @@ addSharedOptions(
 });
 
 cli.help();
-cli.version("0.0.1-beta.2");
+cli.version("0.0.1-beta.3");
 cli.parse(process.argv, { run: false });
 await cli.runMatchedCommand();
