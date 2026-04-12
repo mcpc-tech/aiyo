@@ -30,9 +30,6 @@ export interface LaunchConfig {
   acpCommand: string;
   acpArgs: string[];
   acpEnv?: Record<string, string>;
-  // ptc
-  ptc: boolean;
-  ptcToolNames?: string[];
 }
 
 export interface LaunchOverrides {
@@ -45,7 +42,6 @@ export interface LaunchOverrides {
   upstreamApiKey?: string;
   acpCommand?: string;
   acpArgs?: string[];
-  ptc?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -95,7 +91,5 @@ export function resolveLaunchConfig(overrides: LaunchOverrides = {}): LaunchConf
     acpCommand: overrides.acpCommand || process.env.ACP_COMMAND || file.acp?.command || "opencode",
     acpArgs: overrides.acpArgs || parseArgs(process.env.ACP_ARGS, file.acp?.args || ["acp"]),
     acpEnv: file.acp?.env,
-    // ptc
-    ptc: overrides.ptc ?? process.env.AIYO_PTC === "true",
   };
 }

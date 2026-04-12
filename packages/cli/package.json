@@ -1,10 +1,10 @@
 {
   "name": "@mcpc-tech/aiyo-cli",
-  "version": "0.0.1-beta.3",
+  "version": "0.0.1-beta.4",
   "description": "CLI launcher for aiyo-compatible",
   "license": "Apache-2.0",
   "bin": {
-    "aiyo": "./dist/index.mjs"
+    "aiyo": "./dist/bin.mjs"
   },
   "files": [
     "dist",
@@ -12,12 +12,40 @@
     "LICENSE"
   ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    },
+    "./cli": {
+      "import": "./dist/run-cli.mjs",
+      "types": "./dist/run-cli.d.mts"
+    },
+    "./config": {
+      "import": "./dist/config.mjs",
+      "types": "./dist/config.d.mts"
+    },
+    "./proxy-server": {
+      "import": "./dist/proxy-server.mjs",
+      "types": "./dist/proxy-server.d.mts"
+    },
+    "./opencode": {
+      "import": "./dist/opencode.mjs",
+      "types": "./dist/opencode.d.mts"
+    },
+    "./claude-code": {
+      "import": "./dist/claude-code.mjs",
+      "types": "./dist/claude-code.d.mts"
+    }
+  },
   "scripts": {
     "build": "tsdown",
-    "dev": "tsx src/index.ts",
-    "launch": "tsx src/index.ts launch",
+    "dev": "tsx src/bin.ts",
+    "launch": "tsx src/bin.ts launch",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -3,17 +3,18 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createAiyo } from "@mcpc-tech/aiyo";
+import { createAiyo, type AiyoPlugin } from "@mcpc-tech/aiyo";
 import { createAiyo as createAiyoAcp } from "@mcpc-tech/aiyo-acp";
-import {
-  createJavaScriptCodeExecutionPlugin,
-  type JavaScriptProgrammaticExecutionResult,
-  type JavaScriptProgrammaticToolCallRecord,
-} from "@mcpc-tech/aiyo-ptc";
 import { logger } from "./logger.js";
 import type { LaunchConfig } from "./config.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export type ProxyAdapter = ReturnType<typeof createAiyo> | ReturnType<typeof createAiyoAcp>;
+
+export interface ProxyServerOptions {
+  plugins?: AiyoPlugin[];
+}
 
 export interface RunningProxyServer {
   baseURL: string;
@@ -122,31 +123,21 @@ async function pipeResponse(res: ServerResponse, response: Response, isSSE = fal
   }
 }
 
+function getPlugins(options: ProxyServerOptions): AiyoPlugin[] {
+  return options.plugins ? [...options.plugins] : [];
+}
+
+function getPluginNames(plugins: AiyoPlugin[]): string[] {
+  return plugins.map((plugin, index) => plugin.name || `plugin-${index + 1}`);
+}
+
 // ─── Adapter factory ──────────────────────────────────────────────────────────
 
-function buildAdapter(config: LaunchConfig) {
-  const plugins = config.ptc
-    ? [
-        createJavaScriptCodeExecutionPlugin({
-          name: "ptc",
-          toolNames: config.ptcToolNames ?? ["*"],
-          log: (obj, msg) => logger.info(obj, msg),
-          mapExecutionResult: async (result: JavaScriptProgrammaticExecutionResult) => {
-            logger.info({ source: result.source }, "[ptc] generated code");
-            logger.info(
-              {
-                tools: result.toolHistory.map(
-                  (tc: JavaScriptProgrammaticToolCallRecord) =>
-                    `${tc.toolName}(${JSON.stringify(tc.args)})`,
-                ),
-              },
-              "[ptc] tool calls",
-            );
-            return result.value;
-          },
-        }),
-      ]
-    : [];
+export function createProxyAdapter(
+  config: LaunchConfig,
+  options: ProxyServerOptions = {},
+): ProxyAdapter {
+  const plugins = getPlugins(options);
 
   const coreLog = (details: Record<string, unknown>, msg: string) => {
     logger.info(details, `core: ${msg}`);
@@ -182,8 +173,12 @@ function buildAdapter(config: LaunchConfig) {
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 
-export async function startProxyServer(config: LaunchConfig): Promise<RunningProxyServer> {
-  const adapter = buildAdapter(config);
+export async function startProxyServer(
+  config: LaunchConfig,
+  options: ProxyServerOptions = {},
+): Promise<RunningProxyServer> {
+  const adapter = createProxyAdapter(config, options);
+  const pluginNames = getPluginNames(getPlugins(options));
 
   const server = createServer(async (req, res) => {
     try {
@@ -198,7 +193,7 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
           name: "aiyo-cli-proxy",
           model: config.model,
           provider: config.provider,
-          ptc: config.ptc,
+          plugins: pluginNames,
           endpoints: [
             "/health",
             "/v1/models",
@@ -216,7 +211,7 @@ export async function startProxyServer(config: LaunchConfig): Promise<RunningPro
           status: "ok",
           model: config.model,
           provider: config.provider,
-          ptc: config.ptc,
+          plugins: pluginNames,
         });
         return;
       }

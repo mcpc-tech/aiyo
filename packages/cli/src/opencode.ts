@@ -6,7 +6,7 @@ import { runInteractiveCommand } from "./process-utils.js";
 const PROVIDER_ID = "aiyo";
 const MODEL_MARKER = "_aiyo_launch";
 
-interface OpenCodeLaunchOptions {
+export interface OpenCodeLaunchOptions {
   baseURL: string;
   model: string;
   cwd: string;

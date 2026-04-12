@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo",
-  "version": "0.0.1-beta.3",
+  "version": "0.0.1-beta.4",
   "private": true,
   "description": "Provider-agnostic OpenAI/Anthropic-compatible adapter built on the AI SDK, with optional ACP and PTC integration packages.",
   "keywords": [
@@ -67,9 +67,9 @@
     "client:anthropic": "pnpm --filter aiyo-example-ai-sdk-client anthropic",
     "cli:build": "pnpm --filter @mcpc-tech/aiyo-cli build",
     "cli:dev": "pnpm --filter @mcpc-tech/aiyo-cli dev",
-    "cli:run": "tsx packages/cli/src/index.ts",
-    "cli:serve": "tsx packages/cli/src/index.ts serve",
-    "cli:serve:ptc": "tsx packages/cli/src/index.ts serve --ptc",
+    "cli:run": "tsx packages/cli/src/bin.ts",
+    "cli:serve": "tsx packages/cli/src/bin.ts serve",
+    "cli:serve:ptc": "tsx packages/cli/src/bin.ts serve --ptc",
     "launch": "node scripts/launch-cli.mjs",
     "gateway:start": "bash scripts/start-aiyo.sh",
     "prepublishOnly": "pnpm run build"

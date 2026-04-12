@@ -1,6 +1,6 @@
 import { runInteractiveCommand } from "./process-utils.js";
 
-interface ClaudeCodeLaunchOptions {
+export interface ClaudeCodeLaunchOptions {
   baseURL: string;
   model: string;
   cwd: string;

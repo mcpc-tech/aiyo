@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo-acp",
-  "version": "0.0.1-beta.3",
+  "version": "0.0.1-beta.4",
   "description": "ACP runtime integration package for aiyo-compatible",
   "license": "Apache-2.0",
   "files": [
