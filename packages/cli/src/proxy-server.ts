@@ -5,15 +5,20 @@ import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAiyo, type AiyoPlugin } from "@mcpc-tech/aiyo";
 import { createAiyo as createAiyoAcp } from "@mcpc-tech/aiyo-acp";
+import { createAiyo as createAiyoSampling } from "@mcpc-tech/aiyo-sampling";
 import { logger } from "./logger.js";
 import type { LaunchConfig } from "./config.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ProxyAdapter = ReturnType<typeof createAiyo> | ReturnType<typeof createAiyoAcp>;
+export type ProxyAdapter =
+  | ReturnType<typeof createAiyo>
+  | ReturnType<typeof createAiyoAcp>
+  | ReturnType<typeof createAiyoSampling>;
 
 export interface ProxyServerOptions {
   plugins?: AiyoPlugin[];
+  samplingServer?: import("@modelcontextprotocol/sdk/server/index.js").Server;
 }
 
 export interface RunningProxyServer {
@@ -77,7 +82,11 @@ function logSSELine(line: string, state: { textLen: number; chunkCount: number }
     }
     if (finish) {
       logger.info(
-        { finish_reason: finish, textLen: state.textLen, chunks: state.chunkCount },
+        {
+          finish_reason: finish,
+          textLen: state.textLen,
+          chunks: state.chunkCount,
+        },
         "SSE out: finish",
       );
     }
@@ -158,8 +167,24 @@ export function createProxyAdapter(
     });
   }
 
+  if (config.provider === "sampling") {
+    if (!options.samplingServer) {
+      throw new Error("sampling provider requires a samplingServer instance (MCP Server)");
+    }
+    logger.info("Provider: sampling  (MCP Sampling via connected client)");
+    return createAiyoSampling({
+      defaultModel: config.model,
+      defaultSamplingConfig: { server: options.samplingServer },
+      plugins,
+      log: coreLog,
+    });
+  }
+
   logger.info(`Provider: openai  base: ${config.upstreamBaseURL}`);
-  const openai = createOpenAI({ baseURL: config.upstreamBaseURL, apiKey: config.upstreamApiKey });
+  const openai = createOpenAI({
+    baseURL: config.upstreamBaseURL,
+    apiKey: config.upstreamApiKey,
+  });
   return createAiyo({
     defaultModel: config.model,
     runtimeFactory: ({ modelId }) => ({
@@ -222,14 +247,20 @@ export async function startProxyServer(
         try {
           const parsed = JSON.parse(body);
           const msgs = parsed.messages ?? [];
-          const summary = msgs.slice(-4).map((m: any) => {
-            const e: any = { role: m.role };
-            if (m.tool_calls) e.tc = m.tool_calls.length;
-            if (m.tool_call_id) e.tcid = m.tool_call_id;
-            return e;
-          });
+          const summary = msgs.slice(-4).map(
+            (m: { role?: string; tool_calls?: unknown[]; tool_call_id?: string }) => {
+              const e: { role?: string; tc?: number; tcid?: string } = { role: m.role };
+              if (m.tool_calls) e.tc = m.tool_calls.length;
+              if (m.tool_call_id) e.tcid = m.tool_call_id;
+              return e;
+            },
+          );
           logger.info(
-            { msgCount: msgs.length, toolCount: (parsed.tools ?? []).length, tail: summary },
+            {
+              msgCount: msgs.length,
+              toolCount: (parsed.tools ?? []).length,
+              tail: summary,
+            },
             "incoming request",
           );
         } catch {}
@@ -271,7 +302,9 @@ export async function startProxyServer(
         res.destroy(err instanceof Error ? err : new Error(String(err)));
         return;
       }
-      jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      jsonResponse(res, 500, {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 

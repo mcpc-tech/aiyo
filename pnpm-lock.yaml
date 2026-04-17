@@ -151,6 +151,18 @@ importers:
       '@mcpc-tech/aiyo-ptc':
         specifier: workspace:*
         version: link:../ptc
+      '@mcpc-tech/aiyo-sampling':
+        specifier: workspace:*
+        version: link:../sampling
+      '@mcpc-tech/mcp-sampling-ai-provider':
+        specifier: ^0.1.0
+        version: 0.1.23(zod@3.25.76)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.12.1
+        version: 1.29.0(zod@3.25.76)
+      ai:
+        specifier: ^6.0.116
+        version: 6.0.152(zod@3.25.76)
       cac:
         specifier: ^7.0.0
         version: 7.0.0
@@ -236,6 +248,31 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  packages/sampling:
+    dependencies:
+      '@mcpc-tech/aiyo':
+        specifier: workspace:*
+        version: link:../core
+      '@mcpc-tech/mcp-sampling-ai-provider':
+        specifier: ^0.1.0
+        version: 0.1.23(zod@3.25.76)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.12.1
+        version: 1.29.0(zod@3.25.76)
+      ai:
+        specifier: ^6.0.116
+        version: 6.0.152(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.12.2
+      tsdown:
+        specifier: ^0.21.1
+        version: 0.21.7(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+
 packages:
 
   '@agentclientprotocol/sdk@0.14.1':
@@ -254,6 +291,12 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/gateway@2.0.82':
+    resolution: {integrity: sha512-vtoCSEBGPcxzChI3eqe9C9AJSlc/WUZp92tzpOqVd4B6Tnu4583S+qR7TknB0tPta15TEoOIkK0ENW6D/DgRJQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/gateway@3.0.93':
     resolution: {integrity: sha512-8D6C9eEvDq6IgrdlWzpbniahDkoLiieTCrpzH8p/Hw63/0iPnZJ1uZcqxHrDIVDW/+aaGhBXqmx5C7HSd2eMmQ==}
     engines: {node: '>=18'}
@@ -266,11 +309,21 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/provider-utils@3.0.23':
+    resolution: {integrity: sha512-60GYsRj5wIJQRcq5YwYJq4KhwLeStceXEJiZdecP1miiH+6FMmrnc7lZDOJoQ6m9lrudEb+uI4LEwddLz5+rPQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/provider-utils@4.0.23':
     resolution: {integrity: sha512-z8GlDaCmRSDlqkMF2f4/RFgWxdarvIbyuk+m6WXT1LYgsnGiXRJGTD2Z1+SDl3LqtFuRtGX1aghYvQLoHL/9pg==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/provider@2.0.1':
+    resolution: {integrity: sha512-KCUwswvsC5VsW2PWFqF8eJgSCu5Ysj7m1TxiHTVA6g7k360bk0RNQENT8KTMAYEs+8fWPD3Uu4dEmzGHc+jGng==}
+    engines: {node: '>=18'}
 
   '@ai-sdk/provider@3.0.8':
     resolution: {integrity: sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ==}
@@ -559,6 +612,9 @@ packages:
 
   '@mcpc-tech/handle-sandbox@0.0.11':
     resolution: {integrity: sha512-WNRK25xwWy6NvpCyLb4b5X3FgT37dbauXvpXDbNa1qtuhmtRIax10VA1FidJ+kFFjhUuthamyuxzD4CmTjr8iQ==}
+
+  '@mcpc-tech/mcp-sampling-ai-provider@0.1.23':
+    resolution: {integrity: sha512-i+vtW31SxZ0pYl55lpswthm13XmqXYVJBYjHLyu1fMAnW9LlP2ymtZQ8ilpTncm4Ucydobdgl/EWRV0+DSbx3w==}
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
@@ -1082,6 +1138,12 @@ packages:
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
+
+  ai@5.0.179:
+    resolution: {integrity: sha512-tuq/r2FH/pBuY3jo0yHF3UglDV73WONGLhW80DuwgO6w0ftPIqRsAm5p9cE3Bu4LfEuCkMXpiUG/pQRzqKRRaA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
 
   ai@6.0.152:
     resolution: {integrity: sha512-+MKmC+cAzB7vZ4UiNRPDhynx2571H39ahL5fpF0UaD2CJSl0XZgTeDIqHNoDRo9SfJOz/usKFc8/a7CpjfS3mw==}
@@ -2142,6 +2204,13 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.23(zod@3.25.76)
       zod: 3.25.76
 
+  '@ai-sdk/gateway@2.0.82(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 2.0.1
+      '@ai-sdk/provider-utils': 3.0.23(zod@3.25.76)
+      '@vercel/oidc': 3.1.0
+      zod: 3.25.76
+
   '@ai-sdk/gateway@3.0.93(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
@@ -2155,12 +2224,23 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.23(zod@3.25.76)
       zod: 3.25.76
 
+  '@ai-sdk/provider-utils@3.0.23(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 2.0.1
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.0.6
+      zod: 3.25.76
+
   '@ai-sdk/provider-utils@4.0.23(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.0.6
       zod: 3.25.76
+
+  '@ai-sdk/provider@2.0.1':
+    dependencies:
+      json-schema: 0.4.0
 
   '@ai-sdk/provider@3.0.8':
     dependencies:
@@ -2372,6 +2452,16 @@ snapshots:
   '@mcpc-tech/handle-sandbox@0.0.11':
     dependencies:
       deno: 2.7.12
+
+  '@mcpc-tech/mcp-sampling-ai-provider@0.1.23(zod@3.25.76)':
+    dependencies:
+      '@ai-sdk/provider': 2.0.1
+      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
+      ai: 5.0.179(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+      - zod
 
   '@modelcontextprotocol/sdk@1.29.0(zod@3.25.76)':
     dependencies:
@@ -2739,6 +2829,14 @@ snapshots:
     dependencies:
       mime-types: 3.0.2
       negotiator: 1.0.0
+
+  ai@5.0.179(zod@3.25.76):
+    dependencies:
+      '@ai-sdk/gateway': 2.0.82(zod@3.25.76)
+      '@ai-sdk/provider': 2.0.1
+      '@ai-sdk/provider-utils': 3.0.23(zod@3.25.76)
+      '@opentelemetry/api': 1.9.0
+      zod: 3.25.76
 
   ai@6.0.152(zod@3.25.76):
     dependencies:

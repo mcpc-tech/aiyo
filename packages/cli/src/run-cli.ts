@@ -9,7 +9,7 @@ import { launchOpenCode } from "./opencode.js";
 import { launchClaudeCode } from "./claude-code.js";
 import { logger, logFile } from "./logger.js";
 
-const CLI_VERSION = "0.0.1-beta.4";
+const CLI_VERSION = "0.0.1-beta.5";
 const packageDir = dirname(fileURLToPath(import.meta.url));
 
 interface SharedOptions {
@@ -51,7 +51,10 @@ function buildConfig(opts: SharedOptions) {
 
 function addSharedOptions(cmd: Command): Command {
   return cmd
-    .option("--provider <type>", "Provider: openai (default) | acp  [env: AIYO_PROVIDER]")
+    .option(
+      "--provider <type>",
+      "Provider: openai (default) | acp | sampling  [env: AIYO_PROVIDER]",
+    )
     .option("--model <name>", "Model name  [env: OPENAI_MODEL]")
     .option("--host <host>", "Bind host  [default: 127.0.0.1]")
     .option("--port <port>", "Bind port  [default: 3456]")
@@ -160,6 +163,176 @@ function createCli() {
       await server.close();
     }
   });
+
+  // ── mcp command ─────────────────────────────────────────────────────────────
+  cli
+    .command("mcp", "Start MCP Sampling server on stdio (+ optional HTTP proxy)")
+    .option("--model <name>", "Default model hint  [default: gpt-5-mini]")
+    .option("--http", "Also start an OpenAI-compatible HTTP proxy server")
+    .option("--host <host>", "HTTP bind host  [default: 127.0.0.1]")
+    .option("--port <port>", "HTTP bind port  [default: 3456]")
+    .action(async (opts: { model?: string; http?: boolean; host?: string; port?: number }) => {
+      const { Server } = await import("@modelcontextprotocol/sdk/server/index.js");
+      const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
+      const { CallToolRequestSchema, ListToolsRequestSchema } =
+        await import("@modelcontextprotocol/sdk/types.js");
+      const { createMCPSamplingProvider } = await import("@mcpc-tech/mcp-sampling-ai-provider");
+      const { generateText } = await import("ai");
+
+      const defaultModel = opts.model || process.env.SAMPLING_MODEL || "gpt-5-mini";
+      const TOOL_ASK_AI = "ask_ai";
+
+      interface ModelPreferences {
+        model_hint?: string;
+        cost_priority?: number;
+        speed_priority?: number;
+        intelligence_priority?: number;
+      }
+
+      function buildModelPreferences(prefs: ModelPreferences | undefined): Record<string, unknown> {
+        const hints: Array<{ name: string }> = [];
+        if (prefs?.model_hint) hints.push({ name: prefs.model_hint });
+        if (!hints.length) hints.push({ name: defaultModel });
+
+        const result: Record<string, unknown> = { hints };
+        if (prefs?.cost_priority != null) result.costPriority = prefs.cost_priority;
+        if (prefs?.speed_priority != null) result.speedPriority = prefs.speed_priority;
+        if (prefs?.intelligence_priority != null)
+          result.intelligencePriority = prefs.intelligence_priority;
+
+        return result;
+      }
+
+      const mcpServer = new Server(
+        { name: "mcp-sampling-aiyo-server", version: "0.0.1" },
+        { capabilities: { tools: {} } },
+      );
+
+      mcpServer.setRequestHandler(ListToolsRequestSchema, () => ({
+        tools: [
+          {
+            name: TOOL_ASK_AI,
+            description:
+              "Ask an LLM a question using MCP Sampling. " +
+              "Use this tool when you need an LLM to answer a question, generate text, analyze content, or perform any reasoning task. " +
+              "The connected MCP client (e.g. VS Code, Claude Code) handles the actual model call via MCP Sampling. " +
+              "Required parameter: `prompt` — the user message/question to send. " +
+              "Optional: `system` — system instruction for LLM context. " +
+              "Optional model preferences (MCP Sampling spec): " +
+              "`model_hint` — preferred model name (default: " +
+              defaultModel +
+              "), " +
+              "`cost_priority` / `speed_priority` / `intelligence_priority` — 0..1 floats controlling trade-offs.",
+            inputSchema: {
+              type: "object" as const,
+              properties: {
+                prompt: {
+                  type: "string" as const,
+                  description:
+                    "The user message or question to send to the LLM. This is the main input — always use this parameter.",
+                },
+                system: {
+                  type: "string" as const,
+                  description:
+                    "Optional system instruction to set context, persona, or constraints for the LLM response.",
+                },
+                model_hint: {
+                  type: "string" as const,
+                  description:
+                    'Preferred model name hint (fuzzy-matched by client). Default: "' +
+                    defaultModel +
+                    '"',
+                },
+                cost_priority: {
+                  type: "number" as const,
+                  minimum: 0,
+                  maximum: 1,
+                  description: "Cost preference: higher value prefers cheaper models (0–1).",
+                },
+                speed_priority: {
+                  type: "number" as const,
+                  minimum: 0,
+                  maximum: 1,
+                  description: "Speed preference: higher value prefers faster models (0–1).",
+                },
+                intelligence_priority: {
+                  type: "number" as const,
+                  minimum: 0,
+                  maximum: 1,
+                  description:
+                    "Intelligence preference: higher value prefers more capable models (0–1).",
+                },
+              },
+              required: ["prompt"],
+            },
+          },
+        ],
+      }));
+
+      mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+        const { name, arguments: args } = request.params;
+
+        if (name !== TOOL_ASK_AI) {
+          return {
+            content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
+            isError: true,
+          };
+        }
+
+        const prompt = String(args?.prompt ?? "");
+        if (!prompt) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Missing required argument: prompt",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const system = args?.system ? String(args.system) : undefined;
+
+        const prefs: ModelPreferences = args ?? {};
+        const modelPreferences = buildModelPreferences(prefs);
+
+        const provider = createMCPSamplingProvider({ server: mcpServer });
+        const result = await generateText({
+          model: provider.languageModel({ modelPreferences }),
+          system,
+          prompt,
+        });
+
+        return {
+          content: [{ type: "text" as const, text: result.text }],
+        };
+      });
+
+      // Optional HTTP proxy
+      let httpServer: { close(): void } | undefined;
+      if (opts.http) {
+        const config = resolveLaunchConfig({
+          provider: "sampling",
+          model: defaultModel,
+          host: opts.host,
+          port: opts.port,
+        });
+        const server = await startProxyServer(config, {
+          samplingServer: mcpServer,
+        });
+        httpServer = { close: () => server.close() };
+        logger.info(`HTTP proxy at ${server.baseURL}  model=${defaultModel}`);
+      }
+
+      const transport = new StdioServerTransport();
+      transport.onclose = () => {
+        logger.info("stdio transport closed, shutting down");
+        httpServer?.close();
+      };
+
+      await mcpServer.connect(transport);
+    });
 
   cli.help();
   cli.version(CLI_VERSION);

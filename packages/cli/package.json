@@ -1,6 +1,6 @@
 {
   "name": "@mcpc-tech/aiyo-cli",
-  "version": "0.0.1-beta.4",
+  "version": "0.0.1-beta.5",
   "description": "CLI launcher for aiyo-compatible",
   "license": "Apache-2.0",
   "bin": {
@@ -53,6 +53,10 @@
     "@mcpc-tech/aiyo": "workspace:*",
     "@mcpc-tech/aiyo-acp": "workspace:*",
     "@mcpc-tech/aiyo-ptc": "workspace:*",
+    "@mcpc-tech/aiyo-sampling": "workspace:*",
+    "@mcpc-tech/mcp-sampling-ai-provider": "^0.1.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ai": "^6.0.116",
     "cac": "^7.0.0",
     "dotenv": "^17.4.1",
     "pino": "^10.3.1",

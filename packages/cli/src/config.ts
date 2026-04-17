@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ProviderType = "openai" | "acp";
+export type ProviderType = "openai" | "acp" | "sampling";
 
 interface FileConfig {
   port?: number;
